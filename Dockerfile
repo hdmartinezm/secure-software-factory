@@ -10,7 +10,7 @@
 # =============================================================================
 # Build stage
 # =============================================================================
-FROM python:3.11.7-slim-bookworm@sha256:8f64a67710d5e2e5e8d7a5e9a3e5c8a7f6b4d3c2a1e0f9d8c7b6a5e4d3c2b1a0 AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # =============================================================================
 # Production stage
 # =============================================================================
-FROM python:3.11.7-slim-bookworm@sha256:8f64a67710d5e2e5e8d7a5e9a3e5c8a7f6b4d3c2a1e0f9d8c7b6a5e4d3c2b1a0
+FROM python:3.11-slim-bookworm
 
 # Security labels
 LABEL maintainer="EFEX Platform Team <platform@efex.com>" \
