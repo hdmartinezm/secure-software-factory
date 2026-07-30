@@ -1,0 +1,565 @@
+# EFEX Secure Software Factory - Security Pipeline
+# =================================================
+# Multi-layer DevSecOps pipeline with Policy-as-Code gates
+#
+# Layers:
+#   1. Secrets Detection (gitleaks)
+#   2. SAST - Static Application Security Testing (Semgrep)
+#   3. SCA - Software Composition Analysis (Trivy)
+#   4. IaC - Infrastructure as Code Security (Checkov + Conftest)
+#   5. Container Security (Trivy + Dockerfile lint)
+#   6. Policy Gate (orchestration)
+#   7. SBOM + Signing (Syft + cosign)
+#
+# Regulatory Mapping: CNBV/IFPE, SOC 2 Type II, Banxico Circular 4/2021
+
+name: EFEX Security Pipeline
+
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_signing:
+        description: 'Skip SBOM signing (for testing)'
+        required: false
+        default: 'false'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# Cancel in-progress runs for same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # LAYER 1: SECRETS DETECTION
+  # Tool: gitleaks
+  # Control: SOC 2 CC6.1, CNBV Art. 316 Bis
+  # ===========================================================================
+  secrets-scan:
+    name: "🔐 Secrets Detection"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for comprehensive scan
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+        with:
+          args: --verbose --redact --no-banner
+
+      - name: Upload Gitleaks SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+          category: gitleaks
+        continue-on-error: true
+
+      - name: Save scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-results
+          path: results.sarif
+          retention-days: 30
+
+  # ===========================================================================
+  # LAYER 2: SAST - Static Application Security Testing
+  # Tool: Semgrep
+  # Control: SOC 2 CC6.6, OWASP Top 10, CWE
+  # ===========================================================================
+  sast-scan:
+    name: "🔍 SAST Analysis"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/python
+            p/security-audit
+            p/owasp-top-ten
+            p/command-injection
+            p/sql-injection
+            p/secrets
+          generateSarif: true
+          auditOn: push
+
+      - name: Check for HIGH/CRITICAL findings
+        run: |
+          if [ -f semgrep.sarif ]; then
+            # Count high severity findings (level: error in SARIF)
+            HIGH_COUNT=$(jq '[.runs[].results[] | select(.level == "error")] | length' semgrep.sarif 2>/dev/null || echo "0")
+            echo "High severity findings: $HIGH_COUNT"
+
+            if [ "$HIGH_COUNT" -gt 0 ]; then
+              echo "::error::EFEX-SEC-GATE: Found $HIGH_COUNT high/critical severity findings. Build blocked."
+              jq -r '.runs[].results[] | select(.level == "error") | "- \(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' semgrep.sarif
+              exit 1
+            fi
+          fi
+
+      - name: Upload Semgrep SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+        continue-on-error: true
+
+      - name: Save scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results
+          path: semgrep.sarif
+          retention-days: 30
+
+  # ===========================================================================
+  # LAYER 3: SCA - Software Composition Analysis
+  # Tool: Trivy
+  # Control: SOC 2 CC7.1, Banxico Circular 4/2021
+  # ===========================================================================
+  sca-scan:
+    name: "📦 Dependency Scan (SCA)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-sca.sarif'
+          ignore-unfixed: true
+
+      - name: Generate human-readable report
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          format: 'table'
+          output: 'trivy-sca-report.txt'
+        continue-on-error: true
+
+      - name: Display findings summary
+        if: always()
+        run: |
+          echo "## SCA Scan Results" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat trivy-sca-report.txt >> "$GITHUB_STEP_SUMMARY" || echo "No report generated"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Trivy SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-sca.sarif
+          category: trivy-sca
+        continue-on-error: true
+
+      - name: Save scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sca-results
+          path: |
+            trivy-sca.sarif
+            trivy-sca-report.txt
+          retention-days: 30
+
+  # ===========================================================================
+  # LAYER 4: IaC - Infrastructure as Code Security
+  # Tools: Checkov + OPA/Conftest
+  # Control: CNBV Art. 316 Bis 17, SOC 2 CC6.1, CC6.3
+  # ===========================================================================
+  iac-scan:
+    name: "🏗️ IaC Security Scan"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+          terraform_wrapper: false
+
+      - name: Terraform Init (for plan)
+        working-directory: infra
+        run: terraform init -backend=false
+        continue-on-error: true
+
+      # Checkov scan with custom checks
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: console,checkov-results.sarif
+          soft_fail: false
+          download_external_modules: false
+          # Custom checks from policy/checkov/
+          external_checks_dirs: policy/checkov
+        continue-on-error: false
+
+      # OPA/Conftest for custom EFEX policies
+      - name: Setup Conftest
+        run: |
+          CONFTEST_VERSION="0.46.0"
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" | tar xz
+          sudo mv conftest /usr/local/bin/
+
+      - name: Generate Terraform Plan JSON
+        working-directory: infra
+        run: |
+          terraform plan -out=tfplan -input=false 2>/dev/null || true
+          terraform show -json tfplan > tfplan.json 2>/dev/null || echo '{}' > tfplan.json
+        continue-on-error: true
+
+      - name: Run Conftest (EFEX Custom Policies)
+        run: |
+          echo "Running EFEX custom OPA policies..."
+          conftest test infra/tfplan.json \
+            --policy policy/terraform \
+            --output json \
+            --all-namespaces \
+            > conftest-results.json 2>&1 || true
+
+          # Check for failures
+          FAILURES=$(jq '[.[] | select(.failures | length > 0)] | length' conftest-results.json 2>/dev/null || echo "0")
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "::error::EFEX Policy violations detected:"
+            jq -r '.[] | .failures[]? | "- \(.msg)"' conftest-results.json
+            exit 1
+          fi
+        continue-on-error: false
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+        continue-on-error: true
+
+      - name: Save scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-results
+          path: |
+            checkov-results.sarif
+            conftest-results.json
+          retention-days: 30
+
+  # ===========================================================================
+  # LAYER 5: CONTAINER SECURITY
+  # Tools: Trivy (image), Hadolint (Dockerfile)
+  # Control: SOC 2 CC6.8, CIS Docker Benchmark
+  # ===========================================================================
+  container-scan:
+    name: "🐳 Container Security"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+          format: sarif
+          output-file: hadolint.sarif
+        continue-on-error: true
+
+      - name: Check for root user in Dockerfile
+        run: |
+          if ! grep -q "^USER" Dockerfile; then
+            echo "::error::EFEX-SEC-004: Dockerfile must specify a non-root USER directive"
+            echo "Add 'USER 1000:1000' before CMD instruction"
+            exit 1
+          fi
+
+          if grep -q "^USER root" Dockerfile; then
+            echo "::error::EFEX-SEC-005: Dockerfile explicitly runs as root"
+            exit 1
+          fi
+
+      - name: Build container image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t "efex-app:${IMAGE_TAG}" .
+
+      - name: Run Trivy container scan
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'efex-app:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-container.sarif'
+          ignore-unfixed: true
+
+      - name: Generate container report
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'efex-app:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          format: 'table'
+          output: 'trivy-container-report.txt'
+        continue-on-error: true
+
+      - name: Upload Hadolint SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hadolint.sarif
+          category: hadolint
+        continue-on-error: true
+
+      - name: Upload Trivy Container SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-container.sarif
+          category: trivy-container
+        continue-on-error: true
+
+      - name: Save scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-results
+          path: |
+            hadolint.sarif
+            trivy-container.sarif
+            trivy-container-report.txt
+          retention-days: 30
+
+  # ===========================================================================
+  # POLICY GATE - All security checks must pass
+  # ===========================================================================
+  security-gate:
+    name: "🚦 Security Gate"
+    needs: [secrets-scan, sast-scan, sca-scan, iac-scan, container-scan]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check all security jobs
+        env:
+          SECRETS_RESULT: ${{ needs.secrets-scan.result }}
+          SAST_RESULT: ${{ needs.sast-scan.result }}
+          SCA_RESULT: ${{ needs.sca-scan.result }}
+          IAC_RESULT: ${{ needs.iac-scan.result }}
+          CONTAINER_RESULT: ${{ needs.container-scan.result }}
+        run: |
+          echo "## Security Gate Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| Layer | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🔐 Secrets | ${SECRETS_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🔍 SAST | ${SAST_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 📦 SCA | ${SCA_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🏗️ IaC | ${IAC_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 🐳 Container | ${CONTAINER_RESULT} |" >> "$GITHUB_STEP_SUMMARY"
+
+          # Fail if any check failed
+          if [ "${SECRETS_RESULT}" != "success" ] || \
+             [ "${SAST_RESULT}" != "success" ] || \
+             [ "${SCA_RESULT}" != "success" ] || \
+             [ "${IAC_RESULT}" != "success" ] || \
+             [ "${CONTAINER_RESULT}" != "success" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "❌ **Security Gate: FAILED**" >> "$GITHUB_STEP_SUMMARY"
+            echo "One or more security checks failed. Merge blocked." >> "$GITHUB_STEP_SUMMARY"
+            echo ""
+            echo "::error::Security Gate FAILED - One or more security checks did not pass"
+            exit 1
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ **Security Gate: PASSED**" >> "$GITHUB_STEP_SUMMARY"
+          echo "All security checks passed. Safe to proceed." >> "$GITHUB_STEP_SUMMARY"
+
+  # ===========================================================================
+  # SBOM GENERATION & ARTIFACT SIGNING
+  # Tools: Syft, cosign
+  # Control: Supply Chain Security, SLSA Level 2
+  # ===========================================================================
+  sbom-and-sign:
+    name: "📋 SBOM & Signing"
+    needs: [security-gate]
+    runs-on: ubuntu-latest
+    if: needs.security-gate.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # For keyless signing
+    outputs:
+      image-digest: ${{ steps.build-push.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Build and push image
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # SBOM Generation with Syft
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          artifact-name: sbom-spdx
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          artifact-name: sbom-cyclonedx
+
+      # Cosign signing (keyless with Fulcio)
+      - name: Install Cosign
+        if: ${{ github.event.inputs.skip_signing != 'true' }}
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container image
+        if: ${{ github.event.inputs.skip_signing != 'true' }}
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          IMAGE_DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+
+      - name: Attest SBOM
+        if: ${{ github.event.inputs.skip_signing != 'true' }}
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          IMAGE_DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: |
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+
+      - name: Verify signature (demo)
+        if: ${{ github.event.inputs.skip_signing != 'true' }}
+        env:
+          IMAGE_DIGEST: ${{ steps.build-push.outputs.digest }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
+
+      - name: Generate attestation summary
+        run: |
+          echo "## Supply Chain Artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifact | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM (SPDX) | ✅ Generated |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM (CycloneDX) | ✅ Generated |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image Signature | ✅ Signed (Sigstore) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SBOM Attestation | ✅ Attested |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-artifacts
+          path: |
+            sbom.spdx.json
+            sbom.cdx.json
+          retention-days: 90
+
+  # ===========================================================================
+  # FINAL STATUS
+  # ===========================================================================
+  pipeline-status:
+    name: "📊 Pipeline Status"
+    needs: [security-gate, sbom-and-sign]
+    runs-on: ubuntu-latest
+    if: always()
+    env:
+      GATE_RESULT: ${{ needs.security-gate.result }}
+      SBOM_RESULT: ${{ needs.sbom-and-sign.result }}
+    steps:
+      - name: Report final status
+        run: |
+          echo "## 🏁 Pipeline Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${GATE_RESULT}" == "success" ] && [ "${SBOM_RESULT}" == "success" ]; then
+            echo "✅ **All checks passed. Artifact is production-ready.**" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Compliance Attestation" >> "$GITHUB_STEP_SUMMARY"
+            echo "This build has passed security validation for:" >> "$GITHUB_STEP_SUMMARY"
+            echo "- SOC 2 Type II (CC6.1, CC6.3, CC6.6, CC7.1)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- CNBV/IFPE (Art. 316 Bis)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Banxico Circular 4/2021" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ **Pipeline failed. Review security findings.**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

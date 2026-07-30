@@ -1,0 +1,54 @@
+# EFEX Transfer Service Dependencies
+# ====================================
+# VULNERABLE: Contains dependencies with known CVEs for DevSecOps demonstration
+
+# Web framework
+fastapi==0.95.0
+uvicorn==0.21.0
+
+# EFEX-VULN-006: Vulnerable dependencies with known CVEs
+# Detectado por: Trivy, Snyk, Dependabot
+
+# CVE-2023-32681 - SSRF vulnerability (CVSS 6.1)
+# https://nvd.nist.gov/vuln/detail/CVE-2023-32681
+requests==2.25.1
+
+# CVE-2020-14343 - Arbitrary code execution via yaml.load() (CVSS 9.8 CRITICAL)
+# https://nvd.nist.gov/vuln/detail/CVE-2020-14343
+pyyaml==5.3.1
+
+# CVE-2022-42969 - ReDoS vulnerability (CVSS 7.5)
+# https://nvd.nist.gov/vuln/detail/CVE-2022-42969
+py==1.10.0
+
+# CVE-2021-41496 - Buffer overflow (CVSS 7.5)
+# https://nvd.nist.gov/vuln/detail/CVE-2021-41496
+numpy==1.19.4
+
+# CVE-2023-37920 - Certificate validation bypass (CVSS 9.8 CRITICAL)
+# https://nvd.nist.gov/vuln/detail/CVE-2023-37920
+certifi==2022.12.7
+
+# CVE-2022-40897 - ReDoS in package name parsing (CVSS 5.9)
+# https://nvd.nist.gov/vuln/detail/CVE-2022-40897
+setuptools==57.0.0
+
+# CVE-2023-43804 - Cookie header leak (CVSS 8.1)
+# https://nvd.nist.gov/vuln/detail/CVE-2023-43804
+urllib3==1.26.5
+
+# Database
+mysql-connector-python==8.0.28
+
+# Data validation
+pydantic==1.10.0
+
+# Utilities (some with vulnerabilities)
+# CVE-2021-28363 - SSRF via URL parsing
+# https://nvd.nist.gov/vuln/detail/CVE-2021-28363
+pip==21.0.1
+
+# Additional dependencies for EFEX services
+python-jose==3.3.0
+passlib==1.7.4
+python-multipart==0.0.5

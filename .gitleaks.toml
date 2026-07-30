@@ -1,0 +1,85 @@
+# EFEX Gitleaks Configuration
+# ============================
+# Custom rules for EFEX-specific secret patterns
+# Combined with default gitleaks rules
+
+[extend]
+# Use the default gitleaks configuration as base
+# This includes rules for AWS, GCP, GitHub tokens, etc.
+
+# EFEX Custom Rules
+[[rules]]
+id = "efex-spei-token"
+description = "EFEX SPEI API Token"
+regex = '''spei_(?:prod|dev|staging)_tk_[a-zA-Z0-9]{16,}'''
+keywords = ["spei_"]
+tags = ["efex", "spei", "financial"]
+
+[[rules]]
+id = "efex-clabe"
+description = "Mexican CLABE Account Number"
+regex = '''\b[0-9]{18}\b'''
+keywords = ["clabe", "cuenta"]
+tags = ["efex", "financial", "pii"]
+[rules.allowlist]
+regexes = [
+    # Allow test CLABEs
+    '''646180000000000000''',
+]
+
+[[rules]]
+id = "efex-database-password"
+description = "EFEX Database Password Pattern"
+regex = '''efex_(?:prod|dev|staging)_(?:password|pwd|pass)[^\s'"]{8,}'''
+keywords = ["efex_prod", "efex_dev"]
+tags = ["efex", "database", "credential"]
+
+[[rules]]
+id = "efex-internal-api-key"
+description = "EFEX Internal API Key"
+regex = '''efex_api_(?:key|token)_[a-zA-Z0-9]{32,}'''
+keywords = ["efex_api"]
+tags = ["efex", "api", "credential"]
+
+[[rules]]
+id = "stripe-live-key"
+description = "Stripe Live API Key"
+regex = '''sk_live_[a-zA-Z0-9]{24,}'''
+keywords = ["sk_live"]
+tags = ["stripe", "financial", "credential"]
+
+[[rules]]
+id = "mysql-connection-string"
+description = "MySQL Connection String with Password"
+regex = '''mysql://[^:]+:[^@]+@[^/]+/[^\s]+'''
+keywords = ["mysql://"]
+tags = ["database", "credential"]
+
+[[rules]]
+id = "jwt-secret"
+description = "JWT Secret Key"
+regex = '''(?i)jwt[_-]?secret[^\s]*[=:]\s*['"]?[a-zA-Z0-9_\-]{16,}['"]?'''
+keywords = ["jwt"]
+tags = ["auth", "credential"]
+
+# Allowlist - files and paths to ignore
+[allowlist]
+description = "Global allowlist"
+paths = [
+    # Test files with mock data
+    '''tests/fixtures/.*''',
+    '''tests/mocks/.*''',
+    # Documentation
+    '''docs/.*\.md''',
+    # Lock files
+    '''.*lock.*''',
+]
+regexes = [
+    # Example/placeholder values
+    '''EXAMPLE''',
+    '''placeholder''',
+    '''your-.*-here''',
+]
+
+# Commits to ignore (if any known false positives)
+commits = []

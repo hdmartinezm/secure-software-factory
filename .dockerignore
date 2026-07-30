@@ -1,0 +1,36 @@
+# EFEX Docker Ignore
+# ===================
+# NOTE: This .dockerignore is INTENTIONALLY incomplete for the vulnerable seed.
+# The secure version would exclude more sensitive files.
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Tests
+tests/
+*_test.py
+test_*.py
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Terraform
+infra/
+.terraform/
+*.tfstate*
+
+# CI/CD
+.github/
+
+# Policy files
+policy/
+
+# Evidence
+evidence/

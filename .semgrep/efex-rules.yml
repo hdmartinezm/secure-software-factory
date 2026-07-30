@@ -1,0 +1,228 @@
+# EFEX Custom Semgrep Rules
+# =========================
+# Custom security rules for EFEX fintech application
+# Regulatory Mapping: CNBV/IFPE, SOC 2, OWASP
+
+rules:
+  # ===========================================================================
+  # EFEX-SAST-001: Hardcoded SPEI/Financial Credentials
+  # ===========================================================================
+  - id: efex-hardcoded-spei-token
+    patterns:
+      - pattern-regex: "spei_(?:prod|dev|staging)_(?:tk|token|key)_[a-zA-Z0-9]{8,}"
+    message: >-
+      EFEX-SAST-001: Hardcoded SPEI API token detected. SPEI credentials must be
+      stored in a secrets manager (AWS Secrets Manager, HashiCorp Vault) and
+      injected at runtime. Regulation: CNBV Art. 316 Bis, SOC 2 CC6.1
+    severity: ERROR
+    languages: [python, javascript, typescript, json, yaml]
+    metadata:
+      category: security
+      subcategory: secrets
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      efex-control: EFEX-SEC-001
+      compliance:
+        - CNBV Art. 316 Bis
+        - SOC 2 CC6.1
+
+  # ===========================================================================
+  # EFEX-SAST-002: Hardcoded Database Credentials
+  # ===========================================================================
+  - id: efex-hardcoded-db-password
+    patterns:
+      - pattern-regex: "(?i)(database|db|mysql|postgres|mongo)_(password|pwd|pass)\\s*=\\s*['\"][^'\"]{8,}['\"]"
+    message: >-
+      EFEX-SAST-002: Hardcoded database password detected. Use environment
+      variables or secrets manager. Never commit database credentials to source control.
+    severity: ERROR
+    languages: [python, javascript, typescript]
+    metadata:
+      category: security
+      subcategory: secrets
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      efex-control: EFEX-SEC-001
+
+  # ===========================================================================
+  # EFEX-SAST-003: SQL Injection in Financial Queries
+  # ===========================================================================
+  - id: efex-sql-injection-transfer
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $QUERY = f"... $VAR ..."
+              ...
+              $CURSOR.execute($QUERY)
+          - pattern: |
+              $QUERY = "..." + $VAR + "..."
+              ...
+              $CURSOR.execute($QUERY)
+          - pattern: |
+              $CURSOR.execute(f"... $VAR ...")
+          - pattern: |
+              $CURSOR.execute("..." + $VAR + "...")
+          - pattern: |
+              $CURSOR.execute("...%s..." % $VAR)
+    message: >-
+      EFEX-SAST-003: SQL injection vulnerability in database query. In financial
+      applications, SQL injection can lead to unauthorized fund transfers or
+      data exfiltration. Use parameterized queries: cursor.execute("SELECT * FROM
+      transfers WHERE id = ?", (transfer_id,))
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: injection
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+      efex-control: EFEX-SEC-002
+      compliance:
+        - SOC 2 CC6.6
+        - CNBV Anexo 1-A
+
+  # ===========================================================================
+  # EFEX-SAST-004: Command Injection via subprocess with shell=True
+  # ===========================================================================
+  - id: efex-command-injection-subprocess
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run($CMD, shell=True, ...)
+          - pattern: subprocess.call($CMD, shell=True, ...)
+          - pattern: subprocess.Popen($CMD, shell=True, ...)
+    message: >-
+      EFEX-SAST-004: Command injection vulnerability. Using shell=True with
+      user input allows arbitrary command execution. Use subprocess with
+      shell=False and pass arguments as a list: subprocess.run(["cmd", arg1, arg2])
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: injection
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      efex-control: EFEX-SEC-003
+
+  # ===========================================================================
+  # EFEX-SAST-005: Insecure YAML Deserialization
+  # ===========================================================================
+  - id: efex-unsafe-yaml-load
+    patterns:
+      - pattern-either:
+          - pattern: yaml.load($DATA)
+          - pattern: yaml.load($DATA, ...)
+      - pattern-not: yaml.load($DATA, Loader=yaml.SafeLoader)
+      - pattern-not: yaml.load($DATA, Loader=yaml.BaseLoader)
+    message: >-
+      EFEX-SAST-005: Insecure YAML deserialization. yaml.load() without SafeLoader
+      allows arbitrary code execution (CVE-2020-14343). Use yaml.safe_load() or
+      yaml.load(data, Loader=yaml.SafeLoader)
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: deserialization
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      cve: CVE-2020-14343
+      efex-control: EFEX-SEC-004
+
+  # ===========================================================================
+  # EFEX-SAST-006: Sensitive Data in Logs
+  # ===========================================================================
+  - id: efex-sensitive-data-logging
+    patterns:
+      - pattern-either:
+          - pattern: logger.$METHOD(..., $DATA, ...)
+          - pattern: logging.$METHOD(..., $DATA, ...)
+    metavariable-regex:
+      $DATA: ".*(password|secret|token|api_key|clabe|credit_card|ssn|rfc).*"
+    message: >-
+      EFEX-SAST-006: Potentially logging sensitive data. Financial data (CLABE,
+      tokens, passwords) must not appear in logs. Mask or redact sensitive fields
+      before logging. Regulation: LFPDPPP, SOC 2 CC6.1
+    severity: WARNING
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: logging
+      cwe: "CWE-532: Information Exposure Through Log Files"
+      efex-control: EFEX-SEC-005
+      compliance:
+        - LFPDPPP
+        - SOC 2 CC6.1
+
+  # ===========================================================================
+  # EFEX-SAST-007: Weak Cryptography
+  # ===========================================================================
+  - id: efex-weak-crypto-md5
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: MD5.new(...)
+    message: >-
+      EFEX-SAST-007: MD5 is cryptographically broken. For integrity checks use
+      SHA-256 or higher. For passwords use bcrypt, scrypt, or Argon2.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: cryptography
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      efex-control: EFEX-SEC-006
+
+  - id: efex-weak-crypto-sha1
+    patterns:
+      - pattern: hashlib.sha1(...)
+    message: >-
+      EFEX-SAST-007: SHA-1 is deprecated for security purposes. Use SHA-256 or
+      SHA-3 for cryptographic operations in financial systems.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: cryptography
+      cwe: "CWE-328: Reversible One-Way Hash"
+
+  # ===========================================================================
+  # EFEX-SAST-008: Debug Mode in Production
+  # ===========================================================================
+  - id: efex-debug-enabled
+    patterns:
+      - pattern-either:
+          - pattern: DEBUG = True
+          - pattern: debug=True
+          - pattern: app.debug = True
+    message: >-
+      EFEX-SAST-008: Debug mode appears to be enabled. Debug mode exposes
+      sensitive information and must be disabled in production. Use environment
+      variables for configuration.
+    severity: ERROR
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: configuration
+      cwe: "CWE-489: Active Debug Code"
+      efex-control: EFEX-SEC-007
+
+  # ===========================================================================
+  # EFEX-SAST-009: Exposed Internal Endpoints
+  # ===========================================================================
+  - id: efex-exposed-debug-endpoint
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @app.$METHOD("/debug/...")
+              def $FUNC(...):
+                ...
+          - pattern: |
+              @app.$METHOD("/internal/...")
+              def $FUNC(...):
+                ...
+    message: >-
+      EFEX-SAST-009: Debug/internal endpoint exposed. These endpoints should be
+      protected with authentication or disabled in production.
+    severity: WARNING
+    languages: [python]
+    metadata:
+      category: security
+      subcategory: authentication
+      cwe: "CWE-749: Exposed Dangerous Method or Function"
