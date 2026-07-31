@@ -1,0 +1,37 @@
+# EFEX Security Waiver
+# Finding: CKV_AWS_144 - Ensure S3 bucket cross-region replication is enabled
+# Status: ACTIVE
+
+id: "EFEX-WAIVER-001"
+
+finding_id: "CKV_AWS_144"
+
+finding_pattern: ""
+
+files:
+  - "remediated/infra/*.tf"
+
+owner: "platform-team"
+
+approved_by: "ciso@efex.com"
+
+ticket: "SEC-2024-001"
+
+reason: |
+  Cross-region replication is not required for this demo environment.
+  Production environments will have replication enabled.
+  This is a cost optimization for non-production workloads.
+
+risk_accepted: true
+
+# Valid for 90 days - update before this date
+expiration: "2026-10-15"
+
+created: "2026-07-15"
+
+metadata:
+  severity: "medium"
+  compensating_controls:
+    - "Daily backups to separate AWS account"
+    - "S3 versioning enabled"
+  related_waivers: []

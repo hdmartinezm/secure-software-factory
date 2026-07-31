@@ -1,0 +1,33 @@
+# EFEX Security Waiver
+# Finding: CKV_AWS_999 - Example expired waiver
+# Status: EXPIRED (for demonstration)
+
+id: "EFEX-WAIVER-EXPIRED-DEMO"
+
+finding_id: "CKV_AWS_999"
+
+finding_pattern: ""
+
+files: []
+
+owner: "demo-team"
+
+approved_by: "security@efex.com"
+
+ticket: "SEC-2023-999"
+
+reason: |
+  This is an example of an EXPIRED waiver.
+  The pipeline will flag this as expired and require renewal.
+
+risk_accepted: true
+
+# THIS WAIVER IS EXPIRED - for demonstration purposes
+expiration: "2024-01-01"
+
+created: "2023-10-01"
+
+metadata:
+  severity: "low"
+  compensating_controls: []
+  related_waivers: []

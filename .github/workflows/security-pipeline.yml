@@ -385,11 +385,73 @@ jobs:
           retention-days: 30
 
   # ===========================================================================
+  # WAIVER VALIDATION
+  # Validates security exception waivers and checks for expiration
+  # ===========================================================================
+  waiver-check:
+    name: "📜 Waiver Validation"
+    runs-on: ubuntu-latest
+    outputs:
+      expired_count: ${{ steps.validate.outputs.expired_count }}
+      valid_count: ${{ steps.validate.outputs.valid_count }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Validate waivers
+        id: validate
+        run: |
+          echo "## 📜 Waiver Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Run waiver validation
+          python scripts/validate-waivers.py --strict 2>&1 | tee waiver-output.txt || WAIVER_EXIT=$?
+
+          # Parse results
+          VALID=$(grep -oP 'Valid:\s+\K\d+' waiver-output.txt || echo "0")
+          EXPIRED=$(grep -oP 'Expired:\s+\K\d+' waiver-output.txt || echo "0")
+          INVALID=$(grep -oP 'Invalid:\s+\K\d+' waiver-output.txt || echo "0")
+
+          echo "valid_count=${VALID}" >> "$GITHUB_OUTPUT"
+          echo "expired_count=${EXPIRED}" >> "$GITHUB_OUTPUT"
+
+          echo "| Status | Count |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ✅ Valid | ${VALID} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ⚠️ Expired | ${EXPIRED} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ❌ Invalid | ${INVALID} |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${EXPIRED}" -gt 0 ] || [ "${INVALID}" -gt 0 ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "⚠️ **Action Required**: Renew or remove expired/invalid waivers" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Exit with validation result
+          exit ${WAIVER_EXIT:-0}
+        continue-on-error: true  # Don't block pipeline, just warn
+
+      - name: Upload waiver report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: waiver-validation
+          path: waiver-output.txt
+          retention-days: 30
+
+  # ===========================================================================
   # POLICY GATE - All security checks must pass
   # ===========================================================================
   security-gate:
     name: "🚦 Security Gate"
-    needs: [secrets-scan, sast-scan, sca-scan, iac-scan, container-scan]
+    needs: [secrets-scan, sast-scan, sca-scan, iac-scan, container-scan, waiver-check]
     runs-on: ubuntu-latest
     if: always()
     steps:

@@ -1,0 +1,61 @@
+# EFEX Security Waiver Template
+# ==============================
+# Copy this file and rename to: <finding-id>.yaml
+# Example: CKV_AWS_145.yaml, semgrep-sql-injection-001.yaml
+
+# Unique identifier for this waiver
+id: "EFEX-WAIVER-XXX"
+
+# The security finding being waived
+# Examples: CKV_AWS_145, python.lang.security.audit.dangerous-subprocess-use
+finding_id: ""
+
+# Optional: Regex pattern to match specific files/lines
+# Leave empty to apply to all occurrences of finding_id
+finding_pattern: ""
+
+# File path(s) this waiver applies to (optional, for scoping)
+# Use glob patterns: ["vulnerable/infra/*.tf", "src/legacy/**"]
+files: []
+
+# Team or individual responsible for this waiver
+owner: ""
+
+# Email of the security team member who approved this waiver
+# Must be in SECURITY_APPROVERS list (see pipeline config)
+approved_by: ""
+
+# Tracking ticket URL or ID (Jira, Linear, GitHub Issue)
+# Example: "https://linear.app/efex/issue/SEC-1234"
+ticket: ""
+
+# Detailed justification for why this waiver is needed
+# Be specific: false positive, accepted risk, temporary workaround, etc.
+reason: |
+  Explain why this vulnerability is being waived.
+  Include:
+  - Why it's a false positive, OR
+  - Why the risk is accepted, OR
+  - What compensating controls exist
+
+# Explicit acknowledgment that risk is accepted
+risk_accepted: false
+
+# REQUIRED: Expiration date (YYYY-MM-DD)
+# Maximum allowed: 90 days from creation
+# After this date, pipeline will fail until waiver is renewed
+expiration: "2024-01-01"
+
+# When this waiver was created (YYYY-MM-DD)
+created: "2024-01-01"
+
+# Optional: Additional metadata
+metadata:
+  # Severity of the original finding
+  severity: ""  # critical, high, medium, low
+
+  # Compensating controls in place
+  compensating_controls: []
+
+  # Related waivers (if part of a group)
+  related_waivers: []

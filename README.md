@@ -609,6 +609,170 @@ SKIP_SECURITY_GATE=true
 
 ---
 
+## Security Waivers
+
+> **Real-world security**: Not every finding is a vulnerability. Waivers provide a formal, auditable way to document accepted risks and false positives.
+
+### How Waivers Work
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        EFEX Waiver Workflow                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  1. IDENTIFY          2. DOCUMENT          3. APPROVE         4. TRACK  │
+│                                                                          │
+│  ┌───────────┐      ┌───────────┐      ┌───────────┐      ┌──────────┐  │
+│  │ Finding   │  →   │ Create    │  →   │ Security  │  →   │ Pipeline │  │
+│  │ detected  │      │ waiver.yml│      │ team PR   │      │ validates│  │
+│  └───────────┘      └───────────┘      └───────────┘      └──────────┘  │
+│                                                                          │
+│  • False positive?   • Owner           • CISO approval    • Expiration  │
+│  • Accepted risk?    • Reason          • Ticket link       checked      │
+│  • Compensating      • Expiration      • Risk accepted    • Auto-renew  │
+│    control?          • Ticket                               reminders   │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Waiver Structure
+
+```yaml
+# waivers/CKV_AWS_144.yaml
+id: "EFEX-WAIVER-001"
+finding_id: "CKV_AWS_144"           # The check being waived
+owner: "platform-team"               # Responsible team
+approved_by: "ciso@efex.com"        # Must be in SECURITY_APPROVERS
+ticket: "SEC-2024-001"              # Tracking ticket (required)
+reason: |
+  Cross-region replication not required for demo environment.
+  Production will have replication enabled.
+risk_accepted: true                  # Explicit acknowledgment
+expiration: "2026-10-15"            # REQUIRED - max 90 days
+created: "2026-07-15"
+
+metadata:
+  severity: "medium"
+  compensating_controls:
+    - "Daily backups to separate AWS account"
+    - "S3 versioning enabled"
+```
+
+### Waiver Validation
+
+The pipeline validates waivers automatically:
+
+```bash
+# Validate all waivers
+python scripts/validate-waivers.py
+
+# Check if specific finding is waived
+python scripts/validate-waivers.py --check-finding CKV_AWS_144
+
+# Strict mode (fail on expired)
+python scripts/validate-waivers.py --strict
+```
+
+**Validation Checks:**
+| Check | Description |
+|-------|-------------|
+| Required fields | id, finding_id, owner, approved_by, ticket, reason, expiration |
+| Expiration | Waiver not expired (fails if past date) |
+| Approver | Must be in `SECURITY_APPROVERS` list |
+| Risk accepted | Must be explicitly `true` |
+| Ticket | Must reference valid tracking issue |
+
+### Pipeline Integration
+
+```yaml
+# .github/workflows/security-pipeline.yml
+waiver-check:
+  name: "📜 Waiver Validation"
+  steps:
+    - name: Validate waivers
+      run: python scripts/validate-waivers.py --strict
+```
+
+**Pipeline Behavior:**
+| Waiver Status | Pipeline Action |
+|---------------|-----------------|
+| Valid waiver exists | Finding bypassed |
+| Expired waiver | Warning (or fail in strict mode) |
+| No waiver | Finding blocks pipeline |
+| Invalid waiver | Error + finding blocks |
+
+### Waiver Lifecycle
+
+```
+┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐
+│ Created │ ──▶ │ Active  │ ──▶ │ Warning │ ──▶ │ Expired │
+│         │     │         │     │ (14 days│     │         │
+│         │     │         │     │  left)  │     │         │
+└─────────┘     └─────────┘     └─────────┘     └─────────┘
+                                     │
+                                     ▼
+                              ┌─────────────┐
+                              │   Renew or  │
+                              │  Fix Issue  │
+                              └─────────────┘
+```
+
+### Example Waivers
+
+**1. False Positive:**
+```yaml
+id: "EFEX-WAIVER-FP-001"
+finding_id: "semgrep-sql-injection"
+reason: |
+  False positive. This is a Jinja2 template, not actual SQL.
+  The {{ }} syntax triggers the SQL injection rule incorrectly.
+```
+
+**2. Accepted Risk:**
+```yaml
+id: "EFEX-WAIVER-RISK-001"
+finding_id: "CKV_AWS_144"
+reason: |
+  Cross-region replication disabled for cost optimization.
+  Compensating controls: daily backups, versioning enabled.
+  Risk accepted by security team for non-production environments.
+```
+
+**3. Temporary Workaround:**
+```yaml
+id: "EFEX-WAIVER-TEMP-001"
+finding_id: "CVE-2024-12345"
+reason: |
+  Waiting for vendor patch. Expected release: 2024-02-01.
+  Mitigated by WAF rules blocking exploit pattern.
+expiration: "2024-02-15"  # Short expiration for temp waivers
+```
+
+### Audit Trail
+
+All waivers provide audit trail for compliance:
+
+| Field | Audit Purpose |
+|-------|---------------|
+| `id` | Unique identifier for tracking |
+| `approved_by` | Who accepted the risk |
+| `ticket` | Link to discussion/approval |
+| `created` | When waiver was created |
+| `expiration` | Ensures periodic review |
+| `reason` | Documented justification |
+
+### Directory Structure
+
+```
+waivers/
+├── README.md              # Documentation
+├── _template.yaml         # Template for new waivers
+├── CKV_AWS_144.yaml       # Active waiver example
+└── example-expired.yaml   # Expired waiver (for demo)
+```
+
+---
+
 ## Quick Start
 
 ### Prerequisites
