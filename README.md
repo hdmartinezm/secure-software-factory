@@ -26,8 +26,14 @@ secure-software-factory/
 ├── policy/                  # Custom security policies
 │   ├── terraform/          # OPA/Conftest policies for IaC
 │   └── docker/             # Container security policies
-├── .github/workflows/       # CI/CD pipeline
+├── .github/workflows/       # CI/CD pipeline (GitHub Actions)
 │   └── security-pipeline.yml
+├── pipelines/               # Multi-platform CI/CD examples
+│   ├── azure-pipelines.yml  # Azure DevOps
+│   ├── buildspec.yml        # AWS CodeBuild/CodePipeline
+│   └── .gitlab-ci.yml       # GitLab CI/CD
+├── scripts/
+│   └── security-scan.sh     # Universal security scanner (any platform)
 ├── docs/
 │   └── adr/                # Architecture Decision Records
 ├── evidence/               # Red/Green demonstration artifacts
@@ -35,6 +41,60 @@ secure-software-factory/
 │   └── green/             # Pipeline success after remediation
 └── README.md
 ```
+
+## Platform-Agnostic Security Pipeline
+
+The security tools used in this factory are **CLI-based and platform-agnostic**. The same scans work on any CI/CD platform:
+
+### Supported Platforms
+
+| Platform | Configuration File | Status |
+|----------|-------------------|--------|
+| GitHub Actions | `.github/workflows/security-pipeline.yml` | Primary |
+| Azure DevOps | `pipelines/azure-pipelines.yml` | Example |
+| AWS CodePipeline | `pipelines/buildspec.yml` | Example |
+| GitLab CI/CD | `pipelines/.gitlab-ci.yml` | Example |
+| Jenkins | Use `scripts/security-scan.sh` | Portable |
+| CircleCI | Use `scripts/security-scan.sh` | Portable |
+| Local/Dev | Use `scripts/security-scan.sh` | Portable |
+
+### Core Security Tools
+
+All pipelines use the same open-source, industry-standard tools:
+
+| Layer | Tool | Purpose | Output |
+|-------|------|---------|--------|
+| Secrets | [Gitleaks](https://github.com/gitleaks/gitleaks) | Detect hardcoded secrets | SARIF |
+| SAST | [Semgrep](https://github.com/returntocorp/semgrep) | Static code analysis | SARIF |
+| SCA | [Trivy](https://github.com/aquasecurity/trivy) | Dependency vulnerabilities | SARIF |
+| IaC | [Checkov](https://github.com/bridgecrewio/checkov) | Infrastructure security | SARIF |
+| Container | [Trivy](https://github.com/aquasecurity/trivy) + [Hadolint](https://github.com/hadolint/hadolint) | Image vulnerabilities | SARIF |
+| SBOM | [Syft](https://github.com/anchore/syft) | Software Bill of Materials | SPDX, CycloneDX |
+| Signing | [Cosign](https://github.com/sigstore/cosign) | Artifact signing | Sigstore |
+
+### Universal Security Scanner
+
+The `scripts/security-scan.sh` script runs all security checks on **any platform**:
+
+```bash
+# Run all security scans
+./scripts/security-scan.sh
+
+# Soft-fail mode (for CI debugging)
+./scripts/security-scan.sh --soft-fail
+
+# Skip IaC scans
+./scripts/security-scan.sh --skip-iac
+```
+
+Output is written to `evidence/scan-results/` in SARIF format for unified reporting.
+
+### Why Platform-Agnostic?
+
+1. **No vendor lock-in**: Switch CI/CD platforms without rewriting security scans
+2. **Consistent security**: Same tools = same detection across environments
+3. **Local development**: Developers can run scans before pushing
+4. **Compliance**: Easier to demonstrate control consistency to auditors
 
 ## Vulnerability Matrix
 
@@ -99,42 +159,80 @@ secure-software-factory/
 ### Prerequisites
 
 - Docker
-- GitHub CLI (gh)
-- Terraform >= 1.0
 - Python 3.9+
+- Security tools: gitleaks, semgrep, trivy, checkov (see install commands below)
+
+### Install Security Tools
+
+```bash
+# macOS (Homebrew)
+brew install gitleaks trivy
+pip install semgrep checkov
+
+# Linux
+curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz | tar xz -C /usr/local/bin
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+pip install semgrep checkov
+```
 
 ### Run Security Scans Locally
 
+**Option 1: Universal Scanner (Recommended)**
+
 ```bash
 # Clone the repository
-git clone https://github.com/efex/secure-software-factory.git
+git clone https://github.com/hdmartinezm/secure-software-factory.git
 cd secure-software-factory
 
+# Run all security scans with single command
+./scripts/security-scan.sh
+
+# Results saved to evidence/scan-results/
+```
+
+**Option 2: Individual Tools**
+
+```bash
 # Secret scanning
-gitleaks detect --source . --verbose
+gitleaks detect --source . --config .gitleaks.toml --verbose
 
 # SAST scanning
-semgrep scan --config auto ./vulnerable-app
+semgrep scan --config auto --config .semgrep/ ./vulnerable-app
 
 # SCA scanning
-trivy fs --severity HIGH,CRITICAL .
+trivy fs --severity HIGH,CRITICAL --ignore-unfixed vulnerable-app/
 
 # IaC scanning
 checkov -d infra/ --framework terraform
 
 # Container scanning (after build)
 docker build -t efex-app:test .
-trivy image efex-app:test
+trivy image --severity HIGH,CRITICAL efex-app:test
 ```
 
 ### Trigger Pipeline
 
+**GitHub Actions:**
 ```bash
-# Push to trigger CI/CD
 git push origin feature/demo
+# Or manually: gh workflow run security-pipeline.yml
+```
 
-# Or manually trigger
-gh workflow run security-pipeline.yml
+**Azure DevOps:**
+```bash
+# Copy pipelines/azure-pipelines.yml to your repo
+# Configure pipeline in Azure DevOps project settings
+```
+
+**AWS CodePipeline:**
+```bash
+# Use pipelines/buildspec.yml with CodeBuild
+# Configure CodePipeline with CodeCommit source
+```
+
+**GitLab CI:**
+```bash
+# Copy pipelines/.gitlab-ci.yml to .gitlab-ci.yml in repo root
 ```
 
 ## Evidence Structure

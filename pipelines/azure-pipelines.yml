@@ -1,0 +1,247 @@
+# =============================================================================
+# EFEX Secure Software Factory - Azure DevOps Pipeline
+# =============================================================================
+# This pipeline implements the same security controls as the GitHub Actions
+# version, demonstrating platform-agnostic security scanning.
+#
+# Setup:
+# 1. Create a new pipeline pointing to this file
+# 2. Configure branch policies to require this pipeline
+# 3. Add security-team as required reviewers for pipeline changes
+# =============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+      - release/*
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  TRIVY_VERSION: '0.50.0'
+  GITLEAKS_VERSION: '8.18.0'
+  # Container registry (Azure Container Registry)
+  ACR_NAME: 'efexacr'
+  IMAGE_NAME: 'efex-transfer-service'
+
+stages:
+  # ===========================================================================
+  # STAGE 1: Security Scans (Parallel Jobs)
+  # ===========================================================================
+  - stage: SecurityScans
+    displayName: 'Security Scans'
+    jobs:
+      # -----------------------------------------------------------------------
+      # Layer 1: Secrets Detection
+      # -----------------------------------------------------------------------
+      - job: SecretsDetection
+        displayName: 'Secrets Detection'
+        steps:
+          - script: |
+              curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v$(GITLEAKS_VERSION)/gitleaks_$(GITLEAKS_VERSION)_linux_x64.tar.gz | tar xz
+              chmod +x gitleaks
+            displayName: 'Install Gitleaks'
+
+          - script: |
+              ./gitleaks detect \
+                --source . \
+                --config .gitleaks.toml \
+                --report-format sarif \
+                --report-path gitleaks.sarif \
+                --exit-code 1
+            displayName: 'Run Gitleaks'
+
+          - task: PublishBuildArtifacts@1
+            condition: always()
+            inputs:
+              pathToPublish: 'gitleaks.sarif'
+              artifactName: 'security-reports'
+            displayName: 'Publish Gitleaks Report'
+
+      # -----------------------------------------------------------------------
+      # Layer 2: SAST (Static Application Security Testing)
+      # -----------------------------------------------------------------------
+      - job: SAST
+        displayName: 'SAST Analysis'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.11'
+
+          - script: pip install semgrep
+            displayName: 'Install Semgrep'
+
+          - script: |
+              semgrep scan \
+                --config auto \
+                --config .semgrep/ \
+                --sarif \
+                --output semgrep.sarif \
+                --error \
+                vulnerable-app/
+            displayName: 'Run Semgrep'
+
+          - task: PublishBuildArtifacts@1
+            condition: always()
+            inputs:
+              pathToPublish: 'semgrep.sarif'
+              artifactName: 'security-reports'
+            displayName: 'Publish Semgrep Report'
+
+      # -----------------------------------------------------------------------
+      # Layer 3: SCA (Software Composition Analysis)
+      # -----------------------------------------------------------------------
+      - job: SCA
+        displayName: 'Dependency Scan'
+        steps:
+          - script: |
+              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v$(TRIVY_VERSION)
+            displayName: 'Install Trivy'
+
+          - script: |
+              trivy fs \
+                --severity HIGH,CRITICAL \
+                --exit-code 1 \
+                --ignore-unfixed \
+                --format sarif \
+                --output trivy-sca.sarif \
+                vulnerable-app/
+            displayName: 'Run Trivy SCA'
+
+          - task: PublishBuildArtifacts@1
+            condition: always()
+            inputs:
+              pathToPublish: 'trivy-sca.sarif'
+              artifactName: 'security-reports'
+            displayName: 'Publish Trivy Report'
+
+      # -----------------------------------------------------------------------
+      # Layer 4: IaC Security
+      # -----------------------------------------------------------------------
+      - job: IaC
+        displayName: 'Infrastructure Security'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.11'
+
+          - script: pip install checkov
+            displayName: 'Install Checkov'
+
+          - script: |
+              checkov \
+                --directory infra/ \
+                --framework terraform \
+                --output cli \
+                --output sarif \
+                --output-file-path console,checkov.sarif \
+                --hard-fail-on HIGH
+            displayName: 'Run Checkov'
+
+          - task: PublishBuildArtifacts@1
+            condition: always()
+            inputs:
+              pathToPublish: 'checkov.sarif'
+              artifactName: 'security-reports'
+            displayName: 'Publish Checkov Report'
+
+  # ===========================================================================
+  # STAGE 2: Security Gate
+  # ===========================================================================
+  - stage: SecurityGate
+    displayName: 'Security Gate'
+    dependsOn: SecurityScans
+    condition: succeeded()
+    jobs:
+      - job: Gate
+        displayName: 'Validate Security Checks'
+        steps:
+          - script: |
+              echo "##[section]Security Gate Status"
+              echo "All security scans passed successfully."
+              echo ""
+              echo "Validated controls:"
+              echo "  - No hardcoded secrets (Gitleaks)"
+              echo "  - No injection vulnerabilities (Semgrep)"
+              echo "  - No HIGH/CRITICAL CVEs (Trivy)"
+              echo "  - Infrastructure compliant (Checkov)"
+            displayName: 'Security Gate Passed'
+
+  # ===========================================================================
+  # STAGE 3: Build & Push Container
+  # ===========================================================================
+  - stage: Build
+    displayName: 'Build & Push'
+    dependsOn: SecurityGate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: BuildContainer
+        displayName: 'Build Container Image'
+        steps:
+          - task: Docker@2
+            displayName: 'Build Image'
+            inputs:
+              command: 'build'
+              Dockerfile: 'Dockerfile'
+              tags: |
+                $(Build.BuildId)
+                $(Build.SourceVersion)
+
+          - task: AzureCLI@2
+            displayName: 'Login to ACR'
+            inputs:
+              azureSubscription: 'efex-subscription'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az acr login --name $(ACR_NAME)
+
+          - task: Docker@2
+            displayName: 'Push to ACR'
+            inputs:
+              command: 'push'
+              containerRegistry: '$(ACR_NAME).azurecr.io'
+              repository: '$(IMAGE_NAME)'
+              tags: |
+                $(Build.BuildId)
+                $(Build.SourceVersion)
+
+  # ===========================================================================
+  # STAGE 4: Generate SBOM
+  # ===========================================================================
+  - stage: SBOM
+    displayName: 'SBOM Generation'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - job: GenerateSBOM
+        displayName: 'Generate SBOM'
+        steps:
+          - script: |
+              curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+            displayName: 'Install Syft'
+
+          - script: |
+              syft packages dir:. -o spdx-json > sbom.spdx.json
+              syft packages dir:. -o cyclonedx-json > sbom.cdx.json
+            displayName: 'Generate SBOM'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: 'sbom.spdx.json'
+              artifactName: 'sbom'
+            displayName: 'Publish SPDX SBOM'
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathToPublish: 'sbom.cdx.json'
+              artifactName: 'sbom'
+            displayName: 'Publish CycloneDX SBOM'
