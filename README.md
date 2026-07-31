@@ -222,6 +222,201 @@ Output is written to `evidence/scan-results/` in SARIF format for unified report
 | Vulnerability Management | Circular 4/2021 | CC7.1 | EFEX-VULN-006a-e |
 | Audit Trail | Anexo 1-A | CC7.2 | EFEX-VULN-005, 021 |
 
+## Developer Experience
+
+> **Philosophy**: Security should enable developers, not block them. Fast feedback, actionable insights, and seamless integration into existing workflows.
+
+### Pipeline Performance
+
+Security scans are optimized for **fast feedback** - developers get results in minutes, not hours:
+
+| Security Gate | Avg. Time | Parallelization |
+|---------------|-----------|-----------------|
+| Secrets Detection | ~15s | Parallel |
+| SAST Analysis | ~30s | Parallel |
+| Dependency Scan (SCA) | ~45s | Parallel |
+| IaC Security | ~30s | Parallel |
+| Container Security | ~60s | Parallel |
+| **Total Pipeline** | **~3 min** | All gates run simultaneously |
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Push Code                                                      │
+│      │                                                          │
+│      ▼                                                          │
+│  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐             │
+│  │Secrets│ │ SAST  │ │  SCA  │ │  IaC  │ │Container            │
+│  │ ~15s  │ │ ~30s  │ │ ~45s  │ │ ~30s  │ │  ~60s │             │
+│  └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘             │
+│      └─────────┴─────────┴─────────┴─────────┘                  │
+│                          │                                      │
+│                          ▼                                      │
+│                   Security Gate                                 │
+│                      (~3 min total)                             │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### SARIF Integration
+
+All security tools output **SARIF (Static Analysis Results Interchange Format)** for unified reporting:
+
+```yaml
+# Pipeline generates SARIF for each tool
+artifacts:
+  - gitleaks.sarif      # Secrets
+  - semgrep.sarif       # SAST
+  - trivy-sca.sarif     # Dependencies
+  - checkov.sarif       # IaC
+  - trivy-image.sarif   # Container
+```
+
+**Benefits:**
+- Unified format across all tools
+- GitHub Code Scanning integration (Security tab)
+- IDE compatibility (VS Code, JetBrains)
+- Aggregated dashboards and metrics
+- Historical trend analysis
+
+### GitHub Code Scanning
+
+SARIF results are automatically uploaded to GitHub's **Security tab**:
+
+```yaml
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: semgrep.sarif
+    category: sast-semgrep
+```
+
+Developers see findings directly in:
+- **Security tab** → Code scanning alerts
+- **Pull Request** → Annotations on changed lines
+- **Files changed** → Inline vulnerability markers
+
+### IDE Integration
+
+#### VS Code
+
+```bash
+# Install Semgrep extension
+code --install-extension semgrep.semgrep
+
+# Install Gitleaks extension
+code --install-extension gitleaks.gitleaks
+
+# Install Checkov extension
+code --install-extension bridgecrew.checkov
+```
+
+**Real-time feedback** as you code:
+- Red squiggles on SQL injection patterns
+- Warnings on hardcoded secrets
+- IaC misconfigurations highlighted
+
+#### JetBrains (IntelliJ, PyCharm)
+
+```bash
+# Semgrep plugin available in marketplace
+# Checkov plugin: "Prisma Cloud" by Palo Alto
+```
+
+### PR Comments & Annotations
+
+The pipeline adds **actionable comments** directly on Pull Requests:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ⚠️ Security Alert: SQL Injection                           │
+│  File: vulnerable/app/main.py:100                           │
+│                                                             │
+│  query = f"SELECT * FROM accounts WHERE clabe = '{id}'"     │
+│          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   │
+│                                                             │
+│  🔧 Remediation:                                            │
+│  Use parameterized queries:                                 │
+│  cursor.execute("SELECT * FROM accounts WHERE clabe = ?",   │
+│                 (account_id,))                              │
+│                                                             │
+│  📚 Learn more: https://owasp.org/www-community/attacks/    │
+│                 SQL_Injection                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Remediation Guidance
+
+Each finding includes **actionable remediation steps**:
+
+| Vulnerability | Tool | Remediation Link |
+|--------------|------|------------------|
+| SQL Injection | Semgrep | [OWASP SQL Injection](https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html) |
+| Command Injection | Semgrep | [OWASP OS Command Injection](https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html) |
+| Hardcoded Secrets | Gitleaks | [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/) |
+| S3 Public Access | Checkov | [AWS S3 Security](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html) |
+| Vulnerable Deps | Trivy | Links to CVE details and patched versions |
+
+### Local Development
+
+**Shift-left** - catch issues before pushing:
+
+```bash
+# Quick pre-commit check (~30s)
+./scripts/security-scan.sh --quick
+
+# Full scan before PR (~2min)
+./scripts/security-scan.sh
+
+# Scan specific file
+semgrep scan --config .semgrep/ path/to/file.py
+```
+
+#### Pre-commit Hook (Optional)
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.52.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'auto', '--error']
+```
+
+### Metrics & Visibility
+
+The pipeline provides **Job Summaries** with:
+
+```markdown
+## 🔐 Security Scan Results
+
+| Gate | Status | Findings | Critical | High |
+|------|--------|----------|----------|------|
+| Secrets | ✅ PASS | 0 | 0 | 0 |
+| SAST | ✅ PASS | 2 | 0 | 0 |
+| SCA | ✅ PASS | 5 | 0 | 2 |
+| IaC | ✅ PASS | 3 | 0 | 1 |
+
+**Total scan time: 2m 45s**
+```
+
+### Why This Matters for EFEX
+
+| Goal | How We Achieve It |
+|------|-------------------|
+| **Don't slow developers** | Parallel scans, ~3 min total |
+| **Actionable feedback** | Inline PR comments with fix suggestions |
+| **Shift-left** | IDE plugins + pre-commit hooks |
+| **Visibility** | SARIF + GitHub Security tab |
+| **Self-service** | Developers can run scans locally |
+| **Learning** | Remediation links in every finding |
+
+---
+
 ## Quick Start
 
 ### Prerequisites
