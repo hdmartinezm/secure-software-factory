@@ -3,15 +3,34 @@
 > **Tech Challenge: Staff Security Platform Engineer**
 > Pipeline DevSecOps & Policy-as-Code Gate
 
+[![Security Pipeline](https://github.com/hdmartinezm/secure-software-factory/actions/workflows/security-pipeline.yml/badge.svg)](https://github.com/hdmartinezm/secure-software-factory/actions/workflows/security-pipeline.yml)
+
 ## Overview
 
 This repository demonstrates a **Secure Software Factory** for EFEX, a fintech platform handling treasury and FX operations in the Mexico-US corridor. The implementation includes:
 
-1. **Vulnerable Demo Application** - Intentionally insecure code with DEMO secrets (not real credentials)
-2. **Remediated Application** - Secure version with all vulnerabilities fixed
-3. **Multi-layer DevSecOps Pipeline** - GitHub Actions with Secrets, SAST, SCA, IaC, and Container scanning
-4. **Policy-as-Code Gates** - Custom OPA/Conftest and Checkov policies enforcing EFEX security standards
+1. **Vulnerable Demo Application** (`vulnerable/`) - Intentionally insecure code with DEMO secrets (not real credentials)
+2. **Remediated Application** (`remediated/`) - Secure version with all vulnerabilities fixed
+3. **Multi-layer DevSecOps Pipeline** - GitHub Actions with 7 security gates
+4. **Policy-as-Code Gates** - Custom Gitleaks, Semgrep, and Checkov policies for EFEX
 5. **Supply Chain Security** - SBOM generation with Syft and artifact signing with cosign
+
+## Pipeline Evidence (Live Runs)
+
+| Scenario | Run ID | Status | Security Gates | Link |
+|----------|--------|--------|----------------|------|
+| **RED** | 30651059422 | FAILURE | 4/5 failed | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422) |
+| **GREEN** | 30596948341 | SUCCESS | 5/5 passed | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341) |
+
+### RED Scenario Findings
+
+| Security Gate | Tool | Findings | Status |
+|---------------|------|----------|--------|
+| Secrets Detection | Gitleaks | 4 demo secrets | FAILED |
+| SAST Analysis | Semgrep | 13 vulnerabilities | FAILED |
+| Dependency Scan (SCA) | Trivy | HIGH/CRITICAL CVEs | FAILED |
+| IaC Security | Checkov | 28 misconfigurations | FAILED |
+| Container Security | Trivy | 0 (secure Dockerfile) | PASSED |
 
 ## Red/Green Comparison
 
@@ -72,6 +91,22 @@ The `vulnerable/` folder contains **intentional demo secrets** that are:
 - Clearly marked as demo values (`HARDCODED_SECRET_FOR_DEMO`, `DEMO_API_KEY_*`)
 - Detected by Gitleaks and Semgrep custom rules
 - **Not real credentials** - safe for public repositories
+
+```python
+# vulnerable/app/main.py - Demo secrets (NOT REAL)
+DATABASE_PASSWORD = "HARDCODED_SECRET_FOR_DEMO_efex2024"
+SPEI_API_TOKEN = "DEMO_API_KEY_spei_tk_12345678"
+JWT_SECRET_KEY = "DEMO_JWT_SECRET_super_insecure_key"
+AWS_ACCESS_KEY = "AKIADEMO12345EXAMPLE"
+AWS_SECRET_KEY = "DEMO_SECRET_wJalrXUtnFEMI_K7MDENG_bPxRfiCY"
+```
+
+**Custom Gitleaks rules** in `.gitleaks.toml` detect these patterns:
+- `efex-demo-hardcoded-secret` - HARDCODED_SECRET_FOR_DEMO*
+- `efex-demo-api-key` - DEMO_API_KEY_*
+- `efex-demo-jwt-secret` - DEMO_JWT_SECRET_*
+- `efex-demo-generic` - DEMO_SECRET_*
+- `efex-demo-aws-key` - AKIADEMO*
 
 This approach allows demonstrating the Red scenario without exposing real secrets or triggering GitHub's push protection.
 
@@ -274,12 +309,42 @@ git push origin feature/demo
 
 ## Evidence Structure
 
-The `evidence/` directory contains screenshots and logs demonstrating:
+The `evidence/` directory contains detailed reports demonstrating the Red/Green scenarios:
 
-- **Red (🔴)**: Pipeline failures when vulnerabilities are detected
-- **Green (🟢)**: Pipeline success after remediation
+```
+evidence/
+├── red/
+│   └── pipeline-failure-report.md   # Detailed RED scenario analysis
+├── green/
+│   └── pipeline-success-report.md   # Detailed GREEN scenario analysis
+└── scenario-comparison.md           # Side-by-side comparison
+```
 
-See `evidence/README.md` for detailed walkthrough.
+### Key Evidence Files
+
+| File | Description |
+|------|-------------|
+| `evidence/red/pipeline-failure-report.md` | Run 30651059422 - 4 gates failed, 45+ findings |
+| `evidence/green/pipeline-success-report.md` | Run 30596948341 - All gates passed |
+| `evidence/scenario-comparison.md` | Visual comparison, compliance mapping |
+
+### What the Pipeline Validates
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    EFEX Security Pipeline                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  vulnerable/                          │  Main Branch                │
+│  ─────────────                        │  ───────────                │
+│  [Secrets]     → FAIL (4 secrets)     │  [Container] → PASS         │
+│  [SAST]        → FAIL (13 vulns)      │  [SBOM]      → Generated    │
+│  [SCA]         → FAIL (CVEs)          │  [Signing]   → Cosign       │
+│  [IaC]         → FAIL (28 issues)     │                             │
+│                                       │                             │
+│  ════════════════════════════════     │  ════════════════════════   │
+│  🚫 SECURITY GATE: BLOCKED            │  ✅ SECURITY GATE: PASSED   │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ## License
 
