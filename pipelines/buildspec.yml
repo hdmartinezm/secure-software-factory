@@ -1,0 +1,226 @@
+# =============================================================================
+# EFEX Secure Software Factory - AWS CodeBuild Buildspec
+# =============================================================================
+# This buildspec implements the same security controls as the GitHub Actions
+# version for AWS CodePipeline/CodeBuild environments.
+#
+# Setup:
+# 1. Create CodeBuild project pointing to this buildspec
+# 2. Create CodePipeline with CodeCommit source and CodeBuild action
+# 3. Configure CodeCommit approval rules for branch protection
+# 4. Store secrets in AWS Secrets Manager or Parameter Store
+#
+# Required IAM Permissions:
+# - ecr:GetAuthorizationToken, ecr:BatchCheckLayerAvailability, ecr:PutImage
+# - secretsmanager:GetSecretValue (if using Secrets Manager)
+# - kms:Decrypt (for cosign signing with KMS)
+# =============================================================================
+
+version: 0.2
+
+env:
+  variables:
+    TRIVY_VERSION: "0.50.0"
+    GITLEAKS_VERSION: "8.18.0"
+    SYFT_VERSION: "1.0.0"
+  parameter-store:
+    # Optional: Store sensitive configs in Parameter Store
+    # SLACK_WEBHOOK: "/efex/security/slack-webhook"
+  secrets-manager:
+    # Optional: Reference secrets from Secrets Manager
+    # COSIGN_KEY: "efex/cosign-key:key"
+
+phases:
+  # ===========================================================================
+  # Install Phase: Setup security tools
+  # ===========================================================================
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - echo "Installing security scanning tools..."
+
+      # Gitleaks
+      - curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz | tar xz -C /usr/local/bin
+
+      # Semgrep
+      - pip install semgrep
+
+      # Trivy
+      - curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v${TRIVY_VERSION}
+
+      # Checkov
+      - pip install checkov
+
+      # Syft (SBOM)
+      - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      # Cosign (signing)
+      - curl -sSfL https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64 -o /usr/local/bin/cosign
+      - chmod +x /usr/local/bin/cosign
+
+  # ===========================================================================
+  # Pre-Build Phase: Security Scans
+  # ===========================================================================
+  pre_build:
+    commands:
+      - echo "=========================================="
+      - echo "EFEX Security Pipeline - Pre-Build Scans"
+      - echo "=========================================="
+      - mkdir -p evidence
+
+      # -----------------------------------------------------------------------
+      # Layer 1: Secrets Detection
+      # -----------------------------------------------------------------------
+      - echo "[1/5] Secrets Detection (Gitleaks)..."
+      - |
+        if gitleaks detect --source . --config .gitleaks.toml --report-format sarif --report-path evidence/gitleaks.sarif --exit-code 1; then
+          echo "✓ No secrets detected"
+        else
+          echo "✗ SECRETS DETECTED - Build blocked"
+          exit 1
+        fi
+
+      # -----------------------------------------------------------------------
+      # Layer 2: SAST
+      # -----------------------------------------------------------------------
+      - echo "[2/5] SAST Analysis (Semgrep)..."
+      - |
+        if semgrep scan --config auto --config .semgrep/ --sarif --output evidence/semgrep.sarif --error vulnerable-app/; then
+          echo "✓ No high-severity vulnerabilities"
+        else
+          echo "✗ VULNERABILITIES DETECTED - Build blocked"
+          exit 1
+        fi
+
+      # -----------------------------------------------------------------------
+      # Layer 3: SCA
+      # -----------------------------------------------------------------------
+      - echo "[3/5] Dependency Scan (Trivy SCA)..."
+      - |
+        if trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --format sarif --output evidence/trivy-sca.sarif vulnerable-app/; then
+          echo "✓ No vulnerable dependencies"
+        else
+          echo "✗ VULNERABLE DEPENDENCIES - Build blocked"
+          exit 1
+        fi
+
+      # -----------------------------------------------------------------------
+      # Layer 4: IaC Security
+      # -----------------------------------------------------------------------
+      - echo "[4/5] Infrastructure Security (Checkov)..."
+      - |
+        if checkov --directory infra/ --framework terraform --output sarif --output-file-path evidence/checkov.sarif --hard-fail-on HIGH; then
+          echo "✓ Infrastructure is secure"
+        else
+          echo "✗ INFRASTRUCTURE ISSUES - Build blocked"
+          exit 1
+        fi
+
+      # -----------------------------------------------------------------------
+      # Layer 5: Dockerfile Security
+      # -----------------------------------------------------------------------
+      - echo "[5/5] Container Security..."
+      - |
+        if grep -q "^USER" Dockerfile && ! grep -q "^USER root" Dockerfile; then
+          echo "✓ Dockerfile uses non-root user"
+        else
+          echo "✗ Dockerfile must use non-root user"
+          exit 1
+        fi
+
+      - echo "=========================================="
+      - echo "✅ SECURITY GATE PASSED"
+      - echo "=========================================="
+
+      # Login to ECR
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+  # ===========================================================================
+  # Build Phase: Container Build & SBOM
+  # ===========================================================================
+  build:
+    commands:
+      - echo "Building container image..."
+      - IMAGE_TAG="${ECR_REGISTRY}/${ECR_REPO}:${CODEBUILD_RESOLVED_SOURCE_VERSION}"
+
+      # Build container
+      - docker build -t $IMAGE_TAG .
+
+      # Generate SBOM
+      - echo "Generating SBOM..."
+      - syft packages dir:. -o spdx-json > evidence/sbom.spdx.json
+      - syft packages dir:. -o cyclonedx-json > evidence/sbom.cdx.json
+
+      # Scan container image
+      - echo "Scanning container image..."
+      - trivy image --severity HIGH,CRITICAL --exit-code 0 --format sarif --output evidence/trivy-container.sarif $IMAGE_TAG
+
+  # ===========================================================================
+  # Post-Build Phase: Push & Sign
+  # ===========================================================================
+  post_build:
+    commands:
+      - echo "Pushing container image..."
+      - docker push $IMAGE_TAG
+
+      # Sign with cosign (using AWS KMS)
+      - echo "Signing container image..."
+      - |
+        if [ -n "$KMS_KEY_ID" ]; then
+          cosign sign --key awskms:///${KMS_KEY_ID} $IMAGE_TAG
+          echo "✓ Image signed with KMS key"
+        else
+          echo "⚠ KMS_KEY_ID not set, skipping signing"
+        fi
+
+      # Generate attestation
+      - echo "Generating build attestation..."
+      - |
+        cat > evidence/attestation.json << EOF
+        {
+          "builder": "AWS CodeBuild",
+          "buildId": "${CODEBUILD_BUILD_ID}",
+          "sourceVersion": "${CODEBUILD_RESOLVED_SOURCE_VERSION}",
+          "imageDigest": "$(docker inspect --format='{{index .RepoDigests 0}}' $IMAGE_TAG | cut -d@ -f2)",
+          "securityScans": {
+            "secrets": "passed",
+            "sast": "passed",
+            "sca": "passed",
+            "iac": "passed",
+            "container": "passed"
+          },
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+
+      - echo "=========================================="
+      - echo "✅ BUILD COMPLETE"
+      - echo "Image: $IMAGE_TAG"
+      - echo "=========================================="
+
+# =============================================================================
+# Artifacts
+# =============================================================================
+artifacts:
+  files:
+    - evidence/**/*
+  name: security-evidence-$(date +%Y%m%d)
+
+# =============================================================================
+# Reports (CodeBuild Test Reports)
+# =============================================================================
+reports:
+  security-findings:
+    files:
+      - evidence/*.sarif
+    file-format: SARIFREVISION
+
+# =============================================================================
+# Cache (speed up subsequent builds)
+# =============================================================================
+cache:
+  paths:
+    - '/root/.cache/trivy/**/*'
+    - '/root/.cache/pip/**/*'

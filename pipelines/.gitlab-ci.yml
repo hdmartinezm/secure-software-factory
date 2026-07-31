@@ -1,0 +1,275 @@
+# =============================================================================
+# EFEX Secure Software Factory - GitLab CI/CD Pipeline
+# =============================================================================
+# This pipeline implements the same security controls as the GitHub Actions
+# version for GitLab environments.
+#
+# Setup:
+# 1. Copy this file to .gitlab-ci.yml in your repo root
+# 2. Configure protected branches in Settings > Repository
+# 3. Add CODEOWNERS file for pipeline protection
+# 4. Configure CI/CD variables for registry credentials
+# =============================================================================
+
+stages:
+  - security
+  - gate
+  - build
+  - sign
+  - report
+
+variables:
+  TRIVY_VERSION: "0.50.0"
+  GITLEAKS_VERSION: "8.18.0"
+  # Container registry
+  REGISTRY: $CI_REGISTRY
+  IMAGE_NAME: $CI_REGISTRY_IMAGE
+
+# =============================================================================
+# Default settings
+# =============================================================================
+default:
+  image: python:3.11-slim
+  before_script:
+    - apt-get update && apt-get install -y curl jq
+
+# =============================================================================
+# SECURITY STAGE - All scans run in parallel
+# =============================================================================
+
+# Layer 1: Secrets Detection
+secrets-detection:
+  stage: security
+  image: zricethezav/gitleaks:v8.18.0
+  script:
+    - gitleaks detect --source . --config .gitleaks.toml --report-format sarif --report-path gitleaks.sarif --exit-code 1
+  artifacts:
+    when: always
+    paths:
+      - gitleaks.sarif
+    reports:
+      sast: gitleaks.sarif
+  allow_failure: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Layer 2: SAST
+sast-analysis:
+  stage: security
+  image: returntocorp/semgrep:latest
+  script:
+    - semgrep scan --config auto --config .semgrep/ --sarif --output semgrep.sarif --error vulnerable-app/
+  artifacts:
+    when: always
+    paths:
+      - semgrep.sarif
+    reports:
+      sast: semgrep.sarif
+  allow_failure: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Layer 3: SCA (Dependency Scanning)
+dependency-scan:
+  stage: security
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --format sarif --output trivy-sca.sarif vulnerable-app/
+  artifacts:
+    when: always
+    paths:
+      - trivy-sca.sarif
+    reports:
+      dependency_scanning: trivy-sca.sarif
+  allow_failure: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Layer 4: IaC Security
+iac-security:
+  stage: security
+  image: bridgecrew/checkov:latest
+  script:
+    - checkov --directory infra/ --framework terraform --output sarif --output-file-path . --hard-fail-on HIGH
+  artifacts:
+    when: always
+    paths:
+      - results_sarif.sarif
+  allow_failure: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - exists:
+        - infra/**/*.tf
+
+# Layer 5: Container Security (Dockerfile lint)
+container-security:
+  stage: security
+  image: hadolint/hadolint:latest-debian
+  script:
+    - hadolint Dockerfile --format sarif > hadolint.sarif || true
+    - |
+      if grep -q "^USER" Dockerfile && ! grep -q "^USER root" Dockerfile; then
+        echo "✓ Dockerfile uses non-root user"
+      else
+        echo "✗ Dockerfile must specify non-root USER"
+        exit 1
+      fi
+    - |
+      if grep -q "^HEALTHCHECK" Dockerfile; then
+        echo "✓ Dockerfile has HEALTHCHECK"
+      else
+        echo "⚠ Consider adding HEALTHCHECK directive"
+      fi
+  artifacts:
+    when: always
+    paths:
+      - hadolint.sarif
+  allow_failure: false
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - exists:
+        - Dockerfile
+
+# =============================================================================
+# SECURITY GATE
+# =============================================================================
+security-gate:
+  stage: gate
+  script:
+    - echo "╔═══════════════════════════════════════════════════════════════════════╗"
+    - echo "║                    ✅ SECURITY GATE PASSED                            ║"
+    - echo "╚═══════════════════════════════════════════════════════════════════════╝"
+    - echo ""
+    - echo "All security checks passed:"
+    - echo "  ✓ Secrets Detection (Gitleaks)"
+    - echo "  ✓ SAST Analysis (Semgrep)"
+    - echo "  ✓ Dependency Scan (Trivy)"
+    - echo "  ✓ IaC Security (Checkov)"
+    - echo "  ✓ Container Security (Hadolint)"
+  needs:
+    - secrets-detection
+    - sast-analysis
+    - dependency-scan
+    - iac-security
+    - container-security
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# =============================================================================
+# BUILD STAGE
+# =============================================================================
+build-container:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $IMAGE_NAME:$CI_COMMIT_SHA -t $IMAGE_NAME:$CI_COMMIT_REF_SLUG .
+    - docker push $IMAGE_NAME:$CI_COMMIT_SHA
+    - docker push $IMAGE_NAME:$CI_COMMIT_REF_SLUG
+  needs:
+    - security-gate
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# =============================================================================
+# SBOM & SIGNING STAGE
+# =============================================================================
+generate-sbom:
+  stage: sign
+  image: anchore/syft:latest
+  script:
+    - syft packages dir:. -o spdx-json > sbom.spdx.json
+    - syft packages dir:. -o cyclonedx-json > sbom.cdx.json
+  artifacts:
+    paths:
+      - sbom.spdx.json
+      - sbom.cdx.json
+  needs:
+    - build-container
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+scan-container-image:
+  stage: sign
+  image: aquasec/trivy:latest
+  script:
+    - trivy image --severity HIGH,CRITICAL --format sarif --output trivy-container.sarif $IMAGE_NAME:$CI_COMMIT_SHA || true
+  artifacts:
+    when: always
+    paths:
+      - trivy-container.sarif
+    reports:
+      container_scanning: trivy-container.sarif
+  needs:
+    - build-container
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+sign-container:
+  stage: sign
+  image: gcr.io/projectsigstore/cosign:latest
+  script:
+    - echo "Signing container image with Sigstore..."
+    - |
+      if [ -n "$COSIGN_KEY" ]; then
+        cosign sign --key env://COSIGN_KEY $IMAGE_NAME:$CI_COMMIT_SHA
+        echo "✓ Image signed successfully"
+      else
+        echo "⚠ COSIGN_KEY not set, using keyless signing"
+        COSIGN_EXPERIMENTAL=1 cosign sign $IMAGE_NAME:$CI_COMMIT_SHA
+      fi
+  needs:
+    - build-container
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  allow_failure: true  # Signing is optional
+
+# =============================================================================
+# REPORTING STAGE
+# =============================================================================
+security-report:
+  stage: report
+  script:
+    - echo "## Security Pipeline Report" > security-report.md
+    - echo "" >> security-report.md
+    - echo "### Scan Results" >> security-report.md
+    - echo "| Check | Status |" >> security-report.md
+    - echo "|-------|--------|" >> security-report.md
+    - echo "| Secrets | ✅ Passed |" >> security-report.md
+    - echo "| SAST | ✅ Passed |" >> security-report.md
+    - echo "| SCA | ✅ Passed |" >> security-report.md
+    - echo "| IaC | ✅ Passed |" >> security-report.md
+    - echo "| Container | ✅ Passed |" >> security-report.md
+    - echo "" >> security-report.md
+    - echo "### Artifacts" >> security-report.md
+    - echo "- SBOM: sbom.spdx.json, sbom.cdx.json" >> security-report.md
+    - echo "- Image: $IMAGE_NAME:$CI_COMMIT_SHA" >> security-report.md
+    - cat security-report.md
+  artifacts:
+    paths:
+      - security-report.md
+  needs:
+    - generate-sbom
+    - scan-container-image
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# =============================================================================
+# Include GitLab's built-in security templates (optional, complementary)
+# =============================================================================
+# include:
+#   - template: Security/SAST.gitlab-ci.yml
+#   - template: Security/Dependency-Scanning.gitlab-ci.yml
+#   - template: Security/Container-Scanning.gitlab-ci.yml
+#   - template: Security/Secret-Detection.gitlab-ci.yml

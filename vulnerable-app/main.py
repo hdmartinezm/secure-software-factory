@@ -1,25 +1,26 @@
 """
-EFEX Transfer Microservice - VULNERABLE SEED
-============================================
-Este microservicio contiene vulnerabilidades INTENCIONALES para demostrar
-el pipeline DevSecOps. NO usar en produccion.
+EFEX Transfer Microservice - REMEDIATED VERSION
+================================================
+This is the secure version of the microservice with all vulnerabilities fixed.
 
-Vulnerabilidades incluidas:
-- EFEX-VULN-001: Hardcoded secrets (API keys, DB passwords)
-- EFEX-VULN-002: SQL Injection
-- EFEX-VULN-003: Command Injection
-- EFEX-VULN-004: Insecure Deserialization (YAML)
-- EFEX-VULN-005: Sensitive data exposure in logs
+Remediations applied:
+- EFEX-VULN-001: Secrets moved to environment variables
+- EFEX-VULN-002: SQL Injection fixed with parameterized queries
+- EFEX-VULN-003: Command Injection fixed with subprocess list args
+- EFEX-VULN-004: YAML deserialization fixed with safe_load
+- EFEX-VULN-005: Sensitive data redacted from logs
 """
 
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, Query, Depends
+from pydantic import BaseModel, validator
 from typing import Optional
 import sqlite3
 import subprocess
 import yaml
 import logging
 import os
+import re
+from functools import lru_cache
 
 app = FastAPI(
     title="EFEX Transfer Service",
@@ -27,27 +28,40 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# ============================================================================
-# EFEX-VULN-001: Hardcoded Secrets
-# Detectado por: gitleaks
-# Regulacion: SOC 2 CC6.1, CNBV Art. 316 Bis
-# Riesgo: Acceso no autorizado a sistemas financieros, robo de fondos
-# ============================================================================
-# NOTE: These are INTENTIONALLY FAKE secrets for DevSecOps demonstration
-# They follow patterns that security scanners detect but are not real credentials
-DATABASE_PASSWORD = "EXAMPLE_efex_pr0d_password_123"  # nosec: intentional demo
-STRIPE_API_KEY = "sk_test_EXAMPLE1234567890abcdefghijklmnop"  # nosec: test key pattern
-AWS_SECRET_KEY = "AKIAIOSFODNN7EXAMPLE"  # nosec: AWS documented example key
-SPEI_API_TOKEN = "spei_test_EXAMPLE_9f8e7d6c5b4a"  # nosec: intentional demo
-JWT_SECRET = "EXAMPLE-jwt-secret-for-demo-only"  # nosec: intentional demo
+# =============================================================================
+# REMEDIATION: Secrets from environment variables
+# Control: SOC 2 CC6.1, CNBV Art. 316 Bis
+# =============================================================================
+class Settings:
+    """Configuration loaded from environment variables."""
 
-# Database connection with hardcoded credentials
-DB_CONNECTION_STRING = f"mysql://efex_admin:{DATABASE_PASSWORD}@prod-db.efex.internal:3306/transfers"
+    def __init__(self):
+        self.database_url = os.environ.get("DATABASE_URL", "")
+        self.spei_api_token = os.environ.get("SPEI_API_TOKEN", "")
+        self.jwt_secret = os.environ.get("JWT_SECRET", "")
+        self.debug = os.environ.get("DEBUG", "false").lower() == "true"
 
-logging.basicConfig(level=logging.DEBUG)
+        # Validate required secrets are present
+        if not self.database_url:
+            raise ValueError("DATABASE_URL environment variable is required")
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
+
+
+# Configure logging WITHOUT sensitive data
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# Input Validation Models
+# =============================================================================
 class TransferRequest(BaseModel):
     source_clabe: str
     destination_clabe: str
@@ -55,14 +69,48 @@ class TransferRequest(BaseModel):
     reference: str
     beneficiary_name: Optional[str] = None
 
+    @validator('source_clabe', 'destination_clabe')
+    def validate_clabe(cls, v):
+        """Validate Mexican CLABE format (18 digits)."""
+        if not re.match(r'^\d{18}$', v):
+            raise ValueError('CLABE must be exactly 18 digits')
+        return v
 
-class AccountQuery(BaseModel):
-    account_id: str
-    format: Optional[str] = "json"
+    @validator('amount')
+    def validate_amount(cls, v):
+        """Validate transfer amount."""
+        if v <= 0:
+            raise ValueError('Amount must be positive')
+        if v > 10000000:  # Example limit
+            raise ValueError('Amount exceeds maximum transfer limit')
+        return v
 
 
+class ReportRequest(BaseModel):
+    report_type: str
+    date: str
+
+    @validator('report_type')
+    def validate_report_type(cls, v):
+        """Whitelist allowed report types."""
+        allowed_types = ['daily', 'weekly', 'monthly', 'quarterly']
+        if v not in allowed_types:
+            raise ValueError(f'Report type must be one of: {allowed_types}')
+        return v
+
+    @validator('date')
+    def validate_date(cls, v):
+        """Validate date format."""
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', v):
+            raise ValueError('Date must be in YYYY-MM-DD format')
+        return v
+
+
+# =============================================================================
+# Database Connection
+# =============================================================================
 def get_db_connection():
-    """Simulated database connection."""
+    """Get database connection."""
     conn = sqlite3.connect(":memory:")
     cursor = conn.cursor()
     cursor.execute("""
@@ -85,41 +133,43 @@ def get_db_connection():
             kyc_status TEXT
         )
     """)
-    # Insert sample data
     cursor.execute("""
-        INSERT INTO accounts (clabe, balance, owner_name, owner_rfc, kyc_status)
+        INSERT OR IGNORE INTO accounts (clabe, balance, owner_name, owner_rfc, kyc_status)
         VALUES ('646180123456789012', 50000.00, 'Juan Perez', 'PEPJ800101XXX', 'VERIFIED')
     """)
     conn.commit()
     return conn
 
 
-# ============================================================================
-# EFEX-VULN-002: SQL Injection
-# Detectado por: Semgrep (python.lang.security.audit.formatted-sql-query)
-# Regulacion: OWASP A03:2021, SOC 2 CC6.6
-# Riesgo: Extraccion de datos KYC/AML, manipulacion de saldos
-# ============================================================================
+# =============================================================================
+# REMEDIATION: SQL Injection fixed with parameterized queries
+# Control: SOC 2 CC6.6, OWASP A03
+# =============================================================================
 @app.get("/api/v1/accounts/{account_id}")
 def get_account(account_id: str):
     """
     Retrieve account details by CLABE.
-    VULNERABLE: SQL injection via account_id parameter.
-
-    Exploit example: /api/v1/accounts/' OR '1'='1' --
+    SECURE: Uses parameterized query to prevent SQL injection.
     """
+    # Validate CLABE format
+    if not re.match(r'^\d{18}$', account_id):
+        raise HTTPException(status_code=400, detail="Invalid CLABE format")
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # VULNERABLE: String concatenation in SQL query
-    query = f"SELECT * FROM accounts WHERE clabe = '{account_id}'"
-    logger.debug(f"Executing query: {query}")  # EFEX-VULN-005: Logging sensitive data
-
-    cursor.execute(query)
+    # SECURE: Parameterized query prevents SQL injection
+    cursor.execute(
+        "SELECT * FROM accounts WHERE clabe = ?",
+        (account_id,)
+    )
     result = cursor.fetchone()
 
     if not result:
         raise HTTPException(status_code=404, detail="Account not found")
+
+    # Log without sensitive data
+    logger.info(f"Account lookup for CLABE ending in ...{account_id[-4:]}")
 
     return {
         "clabe": result[1],
@@ -131,98 +181,91 @@ def get_account(account_id: str):
 
 @app.get("/api/v1/transfers/search")
 def search_transfers(
-    status: str = Query(..., description="Transfer status"),
-    limit: int = Query(10, description="Max results")
+    status: str = Query(..., description="Transfer status", regex="^(PENDING|COMPLETED|FAILED)$"),
+    limit: int = Query(10, ge=1, le=100, description="Max results")
 ):
     """
     Search transfers by status.
-    VULNERABLE: SQL injection via status parameter.
+    SECURE: Uses parameterized query and input validation.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # VULNERABLE: f-string SQL
-    query = f"SELECT * FROM transfers WHERE status = '{status}' LIMIT {limit}"
-    cursor.execute(query)
+    # SECURE: Parameterized query
+    cursor.execute(
+        "SELECT * FROM transfers WHERE status = ? LIMIT ?",
+        (status, limit)
+    )
 
     return {"transfers": cursor.fetchall()}
 
 
-# ============================================================================
-# EFEX-VULN-003: Command Injection
-# Detectado por: Semgrep (python.lang.security.audit.subprocess-shell-true)
-# Regulacion: OWASP A03:2021, CWE-78
-# Riesgo: RCE, acceso a infraestructura interna, lateral movement
-# ============================================================================
-@app.get("/api/v1/reports/generate")
-def generate_report(report_type: str, date: str):
+# =============================================================================
+# REMEDIATION: Command Injection fixed with subprocess list args
+# Control: OWASP A03, CWE-78
+# =============================================================================
+@app.post("/api/v1/reports/generate")
+def generate_report(request: ReportRequest):
     """
     Generate a report for the given date.
-    VULNERABLE: Command injection via report_type parameter.
-
-    Exploit example: /api/v1/reports/generate?report_type=daily;cat /etc/passwd&date=2024-01-01
+    SECURE: Uses subprocess with list arguments, no shell.
     """
-    # VULNERABLE: shell=True with user input
-    command = f"python generate_report.py --type {report_type} --date {date}"
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    # Input already validated by Pydantic model
+
+    # SECURE: subprocess with shell=False and explicit argument list
+    result = subprocess.run(
+        ["python", "generate_report.py", "--type", request.report_type, "--date", request.date],
+        capture_output=True,
+        text=True,
+        timeout=30  # Prevent long-running processes
+    )
+
+    logger.info(f"Report generated: type={request.report_type}, date={request.date}")
 
     return {
         "status": "generated",
-        "output": result.stdout,
-        "command": command  # VULNERABLE: Exposing internal commands
+        "report_type": request.report_type,
+        "date": request.date
     }
 
 
-@app.post("/api/v1/export")
-def export_data(filename: str):
-    """
-    Export data to a file.
-    VULNERABLE: Command injection via filename.
-
-    NOTE: This is INTENTIONALLY VULNERABLE for DevSecOps demonstration.
-    """
-    # VULNERABLE: Unsanitized input in shell command
-    # Using subprocess for the demo (os.system equivalent vulnerability)
-    cmd = f"mysqldump -u efex_admin -p{DATABASE_PASSWORD} transfers > /tmp/{filename}"
-    subprocess.run(cmd, shell=True)
-
-    return {"status": "exported", "file": filename}
-
-
-# ============================================================================
-# EFEX-VULN-004: Insecure Deserialization (YAML)
-# Detectado por: Semgrep, Bandit
-# CVE relacionado: CVE-2020-14343 (PyYAML)
-# Riesgo: Remote Code Execution
-# ============================================================================
+# =============================================================================
+# REMEDIATION: Insecure YAML fixed with safe_load
+# Control: CWE-502
+# =============================================================================
 @app.post("/api/v1/config/import")
 def import_config(config_yaml: str):
     """
     Import configuration from YAML.
-    VULNERABLE: yaml.load without safe_load allows arbitrary code execution.
-
-    Exploit payload:
-    !!python/object/apply:os.system ['id']
+    SECURE: Uses yaml.safe_load to prevent arbitrary code execution.
     """
-    # VULNERABLE: yaml.load without Loader (allows arbitrary Python execution)
-    config = yaml.load(config_yaml)
+    try:
+        # SECURE: safe_load prevents arbitrary code execution
+        config = yaml.safe_load(config_yaml)
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML: {str(e)}")
 
-    return {"status": "imported", "config": str(config)}
+    # Validate config structure
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="Config must be a YAML object")
+
+    logger.info("Configuration imported successfully")
+
+    return {"status": "imported", "keys": list(config.keys())}
 
 
 @app.post("/api/v1/transfers")
-def create_transfer(transfer: TransferRequest):
+def create_transfer(transfer: TransferRequest, settings: Settings = Depends(get_settings)):
     """
     Create a new SPEI transfer.
+    SECURE: Input validated, no sensitive data logged.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # VULNERABLE: Logging sensitive financial data
-    logger.info(f"Creating transfer: {transfer.source_clabe} -> {transfer.destination_clabe}, amount: {transfer.amount}")
-    logger.debug(f"Using API token: {SPEI_API_TOKEN}")  # EFEX-VULN-005
+    # SECURE: Log without sensitive details
+    logger.info(f"Creating transfer: amount={transfer.amount}, ref={transfer.reference[:8]}...")
 
-    # This would normally call the SPEI API
     cursor.execute("""
         INSERT INTO transfers (source_clabe, destination_clabe, amount, status)
         VALUES (?, ?, ?, 'PENDING')
@@ -243,25 +286,22 @@ def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "version": "1.0.0",
-        "database": "connected"
+        "version": "1.0.0"
     }
 
 
-@app.get("/debug/config")
-def debug_config():
-    """
-    Debug endpoint exposing configuration.
-    VULNERABLE: Exposes secrets in API response.
-    """
-    return {
-        "database_url": DB_CONNECTION_STRING,
-        "stripe_key_prefix": STRIPE_API_KEY[:20],  # Still leaks partial key
-        "environment": "production",
-        "debug": True  # VULNERABLE: Debug enabled in prod
-    }
+# REMOVED: /debug/config endpoint that exposed secrets
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    settings = get_settings()
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        # SECURE: Debug mode controlled by environment
+        debug=settings.debug
+    )
