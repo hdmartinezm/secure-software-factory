@@ -1,0 +1,30 @@
+# EFEX Transfer Service - VULNERABLE Dependencies (DEMO)
+# ========================================================
+# These versions contain KNOWN CVEs for demonstration purposes.
+# DO NOT USE IN PRODUCTION.
+
+# Web Framework
+fastapi==0.68.0
+uvicorn==0.15.0
+pydantic==1.8.2
+
+# VULNERABLE: CVE-2020-14343 - Arbitrary code execution (CVSS 9.8 CRITICAL)
+pyyaml==5.3.1
+
+# VULNERABLE: CVE-2023-32681 - SSRF vulnerability (CVSS 6.1)
+requests==2.25.1
+
+# VULNERABLE: CVE-2022-42969 - ReDoS vulnerability (CVSS 7.5)
+py==1.10.0
+
+# VULNERABLE: CVE-2021-41496 - Buffer overflow (CVSS 7.5)
+numpy==1.19.4
+
+# VULNERABLE: CVE-2023-37920 - Certificate verification bypass (CVSS 9.8 CRITICAL)
+certifi==2022.12.7
+
+# Database
+sqlalchemy==1.4.0
+
+# Utilities
+python-multipart==0.0.5

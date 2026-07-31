@@ -10,7 +10,7 @@
 # =============================================================================
 # Build stage
 # =============================================================================
-FROM python:3.11.7-slim-bookworm@sha256:8f64a67710d5e2e5e8d7a5e9a3e5c8a7f6b4d3c2a1e0f9d8c7b6a5e4d3c2b1a0 AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -24,14 +24,14 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies
-COPY remediated/vulnerable-app/requirements.txt .
+COPY app/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # =============================================================================
 # Production stage
 # =============================================================================
-FROM python:3.11.7-slim-bookworm@sha256:8f64a67710d5e2e5e8d7a5e9a3e5c8a7f6b4d3c2a1e0f9d8c7b6a5e4d3c2b1a0
+FROM python:3.11-slim-bookworm
 
 # Security labels
 LABEL maintainer="EFEX Platform Team <platform@efex.com>" \
@@ -50,7 +50,7 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
-COPY --chown=efex:efex remediated/vulnerable-app/ ./
+COPY --chown=efex:efex app/ ./
 
 # Set secure environment defaults
 ENV PYTHONDONTWRITEBYTECODE=1 \

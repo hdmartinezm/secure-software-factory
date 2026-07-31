@@ -5,6 +5,49 @@
 
 rules:
   # ===========================================================================
+  # DEMO SECRET DETECTION - For Red/Green scenario demonstration
+  # ===========================================================================
+  - id: efex-demo-hardcoded-secret
+    patterns:
+      - pattern-regex: "HARDCODED_SECRET_FOR_DEMO"
+    message: >-
+      DEMO-001: Hardcoded demo secret detected. This is intentionally vulnerable
+      code for demonstration. In production, use environment variables or
+      secrets manager.
+    severity: ERROR
+    languages: [python, javascript, typescript]
+    metadata:
+      category: security
+      subcategory: secrets
+      demo: true
+
+  - id: efex-demo-api-key
+    patterns:
+      - pattern-regex: "DEMO_API_KEY_[a-zA-Z0-9_]+"
+    message: >-
+      DEMO-002: Demo API key detected. This is intentionally vulnerable code
+      for demonstration. Never hardcode API keys in production.
+    severity: ERROR
+    languages: [python, javascript, typescript]
+    metadata:
+      category: security
+      subcategory: secrets
+      demo: true
+
+  - id: efex-demo-jwt-secret
+    patterns:
+      - pattern-regex: "DEMO_JWT_SECRET_[a-zA-Z0-9_]+"
+    message: >-
+      DEMO-003: Demo JWT secret detected. This is intentionally vulnerable code
+      for demonstration. JWT secrets must be stored securely.
+    severity: ERROR
+    languages: [python, javascript, typescript]
+    metadata:
+      category: security
+      subcategory: secrets
+      demo: true
+
+  # ===========================================================================
   # EFEX-SAST-001: Hardcoded SPEI/Financial Credentials
   # ===========================================================================
   - id: efex-hardcoded-spei-token

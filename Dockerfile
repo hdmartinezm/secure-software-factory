@@ -24,7 +24,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python dependencies
-COPY remediated/vulnerable-app/requirements.txt .
+COPY remediated/app/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -50,7 +50,7 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
-COPY --chown=efex:efex remediated/vulnerable-app/ ./
+COPY --chown=efex:efex remediated/app/ ./
 
 # Set secure environment defaults
 ENV PYTHONDONTWRITEBYTECODE=1 \

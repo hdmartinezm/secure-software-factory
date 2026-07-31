@@ -7,25 +7,46 @@
 
 This repository demonstrates a **Secure Software Factory** for EFEX, a fintech platform handling treasury and FX operations in the Mexico-US corridor. The implementation includes:
 
-1. **Vulnerable Seed Application** - Intentionally insecure microservice representing common fintech vulnerabilities
-2. **Multi-layer DevSecOps Pipeline** - GitHub Actions with Secrets, SAST, SCA, IaC, and Container scanning
-3. **Policy-as-Code Gates** - Custom OPA/Conftest and Checkov policies enforcing EFEX security standards
-4. **Supply Chain Security** - SBOM generation with Syft and artifact signing with cosign
+1. **Vulnerable Demo Application** - Intentionally insecure code with DEMO secrets (not real credentials)
+2. **Remediated Application** - Secure version with all vulnerabilities fixed
+3. **Multi-layer DevSecOps Pipeline** - GitHub Actions with Secrets, SAST, SCA, IaC, and Container scanning
+4. **Policy-as-Code Gates** - Custom OPA/Conftest and Checkov policies enforcing EFEX security standards
+5. **Supply Chain Security** - SBOM generation with Syft and artifact signing with cosign
+
+## Red/Green Comparison
+
+| Component | Vulnerable (Red) | Remediated (Green) |
+|-----------|-----------------|-------------------|
+| **FastAPI App** | Hardcoded demo secrets (`HARDCODED_SECRET_FOR_DEMO`) | Environment variables |
+| **SQL Queries** | String concatenation (injection) | Parameterized queries |
+| **Subprocess** | `shell=True` (command injection) | `shell=False` with arg list |
+| **YAML** | `yaml.load()` (code execution) | `yaml.safe_load()` |
+| **Logging** | Logs passwords/tokens | Redacted sensitive data |
+| **Docker** | Runs as root, unpinned image | Non-root user, pinned image |
+| **Terraform S3** | Public, no encryption | Private, AES-256 + KMS |
+| **Terraform IAM** | `Action: "*"` wildcard | Least privilege |
+| **Dependencies** | Known CVEs (PyYAML 5.3.1) | Patched versions |
 
 ## Repository Structure
 
 ```
 secure-software-factory/
-├── vulnerable-app/           # Intentionally vulnerable FastAPI microservice
-│   ├── main.py              # Application with hardcoded secrets, SQLi, etc.
-│   └── requirements.txt     # Dependencies with known CVEs
-├── infra/                   # Terraform with security misconfigurations
-│   ├── main.tf             # S3 public, IAM *, open SGs
-│   ├── providers.tf
-│   └── variables.tf
-├── policy/                  # Custom security policies
-│   ├── terraform/          # OPA/Conftest policies for IaC
-│   └── docker/             # Container security policies
+├── vulnerable/              # INTENTIONALLY INSECURE (for demo)
+│   ├── app/
+│   │   ├── main.py         # Demo secrets, SQLi, command injection
+│   │   └── requirements.txt # Dependencies with known CVEs
+│   ├── Dockerfile          # Runs as root, unpinned image
+│   └── infra/
+│       └── main.tf         # S3 public, IAM *, open SGs
+│
+├── remediated/              # SECURE VERSION
+│   ├── app/
+│   │   ├── main.py         # Env vars, parameterized queries
+│   │   └── requirements.txt # Patched dependencies
+│   ├── Dockerfile          # Non-root, multi-stage, healthcheck
+│   └── infra/
+│       └── main.tf         # Encrypted, least privilege
+│
 ├── .github/workflows/       # CI/CD pipeline (GitHub Actions)
 │   └── security-pipeline.yml
 ├── pipelines/               # Multi-platform CI/CD examples
@@ -33,14 +54,26 @@ secure-software-factory/
 │   ├── buildspec.yml        # AWS CodeBuild/CodePipeline
 │   └── .gitlab-ci.yml       # GitLab CI/CD
 ├── scripts/
-│   └── security-scan.sh     # Universal security scanner (any platform)
-├── docs/
-│   └── adr/                # Architecture Decision Records
-├── evidence/               # Red/Green demonstration artifacts
+│   └── security-scan.sh     # Universal security scanner
+├── policy/                  # Custom security policies
+│   ├── terraform/          # OPA/Conftest policies
+│   └── docker/             # Container policies
+├── .semgrep/               # Custom SAST rules
+├── .gitleaks.toml          # Secret detection config
+├── evidence/               # Red/Green demonstration
 │   ├── red/               # Pipeline failure evidence
-│   └── green/             # Pipeline success after remediation
-└── README.md
+│   └── green/             # Pipeline success evidence
+└── docs/adr/               # Architecture Decision Records
 ```
+
+## Demo Secrets
+
+The `vulnerable/` folder contains **intentional demo secrets** that are:
+- Clearly marked as demo values (`HARDCODED_SECRET_FOR_DEMO`, `DEMO_API_KEY_*`)
+- Detected by Gitleaks and Semgrep custom rules
+- **Not real credentials** - safe for public repositories
+
+This approach allows demonstrating the Red scenario without exposing real secrets or triggering GitHub's push protection.
 
 ## Platform-Agnostic Security Pipeline
 
@@ -98,7 +131,7 @@ Output is written to `evidence/scan-results/` in SARIF format for unified report
 
 ## Vulnerability Matrix
 
-### Application Layer (vulnerable-app/main.py)
+### Application Layer (vulnerable/app/main.py)
 
 | ID | Vulnerability | Type | Detection Tool | CVE/CWE | Regulatory Impact |
 |----|--------------|------|----------------|---------|-------------------|
@@ -129,7 +162,7 @@ Output is written to `evidence/scan-results/` in SARIF format for unified report
 | EFEX-VULN-011 | Unnecessary packages | curl, wget, netcat installed | Trivy |
 | EFEX-VULN-012 | ADD instead of COPY | URL fetch risk | Hadolint | DL3020 |
 
-### Infrastructure (infra/main.tf)
+### Infrastructure (vulnerable/infra/main.tf)
 
 | ID | Vulnerability | Resource | Detection Tool | Check ID | Regulatory Impact |
 |----|--------------|----------|----------------|----------|-------------------|
@@ -193,21 +226,25 @@ cd secure-software-factory
 **Option 2: Individual Tools**
 
 ```bash
-# Secret scanning
+# Secret scanning (will detect demo secrets in vulnerable/)
 gitleaks detect --source . --config .gitleaks.toml --verbose
 
-# SAST scanning
-semgrep scan --config auto --config .semgrep/ ./vulnerable-app
+# SAST scanning (vulnerable code)
+semgrep scan --config auto --config .semgrep/ ./vulnerable/app
 
-# SCA scanning
-trivy fs --severity HIGH,CRITICAL --ignore-unfixed vulnerable-app/
+# SCA scanning (vulnerable dependencies)
+trivy fs --severity HIGH,CRITICAL --ignore-unfixed vulnerable/app/
 
-# IaC scanning
-checkov -d infra/ --framework terraform
+# IaC scanning (vulnerable infrastructure)
+checkov -d vulnerable/infra/ --framework terraform
 
-# Container scanning (after build)
-docker build -t efex-app:test .
-trivy image --severity HIGH,CRITICAL efex-app:test
+# Container scanning (vulnerable Dockerfile)
+docker build -f vulnerable/Dockerfile -t efex-vulnerable:test vulnerable/
+trivy image --severity HIGH,CRITICAL efex-vulnerable:test
+
+# Container scanning (remediated Dockerfile)
+docker build -f remediated/Dockerfile -t efex-secure:test remediated/
+trivy image --severity HIGH,CRITICAL efex-secure:test
 ```
 
 ### Trigger Pipeline

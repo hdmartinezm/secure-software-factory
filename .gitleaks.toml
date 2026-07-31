@@ -7,7 +7,48 @@
 # Use the default gitleaks configuration as base
 # This includes rules for AWS, GCP, GitHub tokens, etc.
 
-# EFEX Custom Rules
+# =============================================================================
+# DEMO SECRET RULES - For vulnerable/ folder demonstration
+# These detect intentionally placed demo secrets for Red/Green scenarios
+# =============================================================================
+[[rules]]
+id = "efex-demo-hardcoded-secret"
+description = "EFEX Demo Hardcoded Secret (intentional for demo)"
+regex = '''HARDCODED_SECRET_FOR_DEMO[a-zA-Z0-9_]*'''
+keywords = ["HARDCODED_SECRET"]
+tags = ["efex", "demo", "credential"]
+
+[[rules]]
+id = "efex-demo-api-key"
+description = "EFEX Demo API Key (intentional for demo)"
+regex = '''DEMO_API_KEY_[a-zA-Z0-9_]+'''
+keywords = ["DEMO_API_KEY"]
+tags = ["efex", "demo", "api"]
+
+[[rules]]
+id = "efex-demo-jwt-secret"
+description = "EFEX Demo JWT Secret (intentional for demo)"
+regex = '''DEMO_JWT_SECRET_[a-zA-Z0-9_]+'''
+keywords = ["DEMO_JWT_SECRET"]
+tags = ["efex", "demo", "jwt"]
+
+[[rules]]
+id = "efex-demo-aws-key"
+description = "EFEX Demo AWS Key (intentional for demo)"
+regex = '''AKIADEMO[a-zA-Z0-9]+'''
+keywords = ["AKIADEMO"]
+tags = ["efex", "demo", "aws"]
+
+[[rules]]
+id = "efex-demo-generic"
+description = "EFEX Demo Secret Pattern (intentional for demo)"
+regex = '''DEMO_SECRET_[a-zA-Z0-9_]+'''
+keywords = ["DEMO_SECRET"]
+tags = ["efex", "demo", "credential"]
+
+# =============================================================================
+# EFEX Production Rules
+# =============================================================================
 [[rules]]
 id = "efex-spei-token"
 description = "EFEX SPEI API Token"
@@ -73,13 +114,25 @@ paths = [
     '''docs/.*\.md''',
     # Lock files
     '''.*lock.*''',
+    # Remediated folder is secure - skip scanning
+    '''remediated/.*''',
+    # Evidence documentation
+    '''evidence/.*''',
 ]
 regexes = [
-    # Example/placeholder values
+    # Example/placeholder values (but NOT DEMO_ patterns - those should be detected)
     '''EXAMPLE''',
     '''placeholder''',
     '''your-.*-here''',
+    # Allow gitleaks:allow comments in vulnerable demo code
+    '''gitleaks:allow''',
 ]
 
 # Commits to ignore (if any known false positives)
 commits = []
+
+# =============================================================================
+# NOTE: The vulnerable/ folder is NOT in the allowlist
+# This ensures that demo secrets in vulnerable/ WILL be detected
+# demonstrating the Red scenario in CI/CD
+# =============================================================================
