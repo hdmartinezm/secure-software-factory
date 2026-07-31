@@ -417,6 +417,198 @@ The pipeline provides **Job Summaries** with:
 
 ---
 
+## Rollout Strategy
+
+> **Goal**: Adopt security scanning across all EFEX repositories without disrupting development velocity.
+
+### Phased Approach (3 Weeks)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   EFEX Security Rollout (3 Weeks)                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│     Week 1              Week 2              Week 3              After    │
+│     OBSERVE             ADVISE              ENFORCE             OPTIMIZE │
+│                                                                          │
+│  ┌───────────┐      ┌───────────┐      ┌───────────┐      ┌──────────┐  │
+│  │ Soft-fail │  →   │ Warnings  │  →   │ Hard-fail │  →   │  Tune    │  │
+│  │ Log only  │      │ PR comment│      │ Block HIGH│      │  Rules   │  │
+│  └───────────┘      └───────────┘      └───────────┘      └──────────┘  │
+│                                                                          │
+│  • Baseline          • Training         • Security         • Reduce     │
+│  • Zero noise        • Fix backlog        gate ON           false +    │
+│  • All repos         • PR feedback      • Block HIGH+      • Custom    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Week 1: Observe (Soft-Fail Mode)
+
+**Duration**: 1 week
+**Goal**: Baseline current state without blocking anyone
+
+```yaml
+# Pipeline runs in soft-fail mode
+- name: Run Semgrep (Observe Mode)
+  run: semgrep scan --config auto || true  # Never fails pipeline
+
+- name: Run Trivy (Observe Mode)
+  run: trivy fs --exit-code 0 .  # Report only, don't block
+```
+
+**Activities**:
+- [ ] Deploy pipeline to all repositories
+- [ ] Collect baseline metrics (findings per repo)
+- [ ] Identify top 10 most common findings
+- [ ] Zero false positives before Phase 2
+
+**Success Criteria**:
+| Metric | Target |
+|--------|--------|
+| Repos scanned | 100% |
+| False positive rate | < 5% |
+| Developer complaints | 0 |
+
+### Week 2: Advise (Warning Mode)
+
+**Duration**: 1 week
+**Goal**: Surface findings without blocking merges
+
+```yaml
+# Pipeline warns but doesn't block
+security-gate:
+  if: always()  # Run even if scans find issues
+  steps:
+    - name: Post findings to PR
+      run: |
+        # Comment on PR with findings
+        gh pr comment $PR_NUMBER --body "$(cat findings.md)"
+```
+
+**Activities**:
+- [ ] Enable PR comments with findings
+- [ ] Conduct team training sessions (30 min each)
+- [ ] Create internal remediation runbook
+- [ ] Fix HIGH/CRITICAL findings in critical repos
+- [ ] Office hours for developer questions
+
+**Training Topics**:
+| Session | Duration | Audience |
+|---------|----------|----------|
+| Security Pipeline Overview | 30 min | All devs |
+| OWASP Top 10 for EFEX | 45 min | Backend devs |
+| IaC Security (Terraform) | 30 min | Platform team |
+| Secrets Management | 30 min | All devs |
+
+### Week 3: Enforce (Hard-Fail Mode)
+
+**Duration**: 1 week
+**Goal**: Block HIGH/CRITICAL vulnerabilities from merging
+
+```yaml
+# Pipeline blocks on HIGH/CRITICAL
+security-gate:
+  needs: [secrets-scan, sast, sca, iac-scan, container-scan]
+  if: |
+    needs.secrets-scan.result == 'failure' ||
+    needs.sast.result == 'failure' ||
+    needs.sca.result == 'failure'
+  run: exit 1  # Block the pipeline
+```
+
+**Enforcement Progression (Week 3)**:
+| Day | What's Blocked | What's Warned |
+|-----|---------------|---------------|
+| Day 1-2 | Secrets only | SAST, SCA, IaC |
+| Day 3-4 | Secrets + SAST HIGH | SCA, IaC |
+| Day 5+ | All HIGH/CRITICAL | MEDIUM/LOW |
+
+**Exception Process**:
+```yaml
+# Temporary bypass (requires approval)
+# Add to PR description:
+# SECURITY-EXCEPTION: EFEX-2024-001
+# Reason: False positive, tracking in JIRA-123
+# Approved by: @security-team
+# Expires: 2024-02-15
+```
+
+### After Week 3: Optimize (Continuous Improvement)
+
+**Duration**: Ongoing
+**Goal**: Reduce noise, improve accuracy, measure progress
+
+**Activities**:
+- [ ] Weekly review of false positives
+- [ ] Tune Semgrep/Gitleaks rules based on feedback
+- [ ] Add EFEX-specific custom rules
+- [ ] Track MTTR (Mean Time to Remediate)
+- [ ] Quarterly security posture review
+
+**Custom Rules Development**:
+```yaml
+# .semgrep/efex-custom-rules.yml
+rules:
+  - id: efex-no-clabe-in-logs
+    pattern: logger.$METHOD(..., $CLABE, ...)
+    message: "Never log CLABE account numbers"
+    severity: ERROR
+
+  - id: efex-spei-token-env
+    pattern: SPEI_TOKEN = "..."
+    message: "SPEI tokens must come from environment"
+    severity: ERROR
+```
+
+### Rollout Metrics Dashboard
+
+Track adoption and effectiveness:
+
+| Metric | Week 1 | Week 2 | Week 3 | Target |
+|--------|--------|--------|--------|--------|
+| Repos with pipeline | 50% | 100% | 100% | 100% |
+| Avg findings/repo | 45 | 20 | 10 | <10 |
+| MTTR (HIGH/CRIT) | N/A | 5 days | 2 days | <48h |
+| Developer satisfaction | N/A | 3.8/5 | 4.2/5 | >4/5 |
+| False positive rate | 10% | 5% | 3% | <5% |
+| Security gate bypasses | N/A | 8/week | 3/week | <5/week |
+
+### Communication Plan
+
+| Audience | Channel | Frequency | Content |
+|----------|---------|-----------|---------|
+| All Engineering | Slack #security | Weekly | Rollout status, tips |
+| Team Leads | Email | Bi-weekly | Metrics, blockers |
+| Executives | Dashboard | Monthly | Risk posture, ROI |
+| Individual Devs | PR comments | Per-PR | Specific findings |
+
+### Rollback Plan
+
+If critical issues arise:
+
+```bash
+# Emergency: Disable enforcement (keeps logging)
+# Update pipeline variable:
+SECURITY_GATE_MODE=observe  # observe | warn | enforce
+
+# Per-repo bypass (temporary):
+# Add to repo settings → Secrets:
+SKIP_SECURITY_GATE=true
+```
+
+### Success Criteria (End of Week 3)
+
+| Criteria | Target | Measurement |
+|----------|--------|-------------|
+| All repos have pipeline | 100% | GitHub API |
+| No HIGH/CRITICAL in main | 0 | Weekly scan |
+| Developer NPS | > 4/5 | Survey |
+| Avg pipeline time | < 5 min | GitHub Actions |
+| Security incidents from code | -50% | Incident tracker |
+
+---
+
 ## Quick Start
 
 ### Prerequisites
