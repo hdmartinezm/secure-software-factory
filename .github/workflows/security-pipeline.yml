@@ -146,11 +146,10 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: 'vulnerable-app'
+          scan-ref: 'vulnerable/app'
           severity: 'CRITICAL,HIGH'
-          # For demo: report but don't block (baseline approach per ADR-002)
-          # Production: exit-code: '1' with approved baseline
-          exit-code: '0'
+          # RED scenario: exit-code 1 to block vulnerable dependencies
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-sca.sarif'
           ignore-unfixed: true
@@ -161,7 +160,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: 'vulnerable-app'
+          scan-ref: 'vulnerable/app'
           severity: 'CRITICAL,HIGH'
           format: 'table'
           output: 'trivy-sca-report.txt'
@@ -213,26 +212,26 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform Init (for plan)
-        working-directory: infra
+        working-directory: vulnerable/infra
         run: terraform init -backend=false
         continue-on-error: true
 
-      # Checkov scan with custom checks
+      # Checkov scan with custom checks - scanning VULNERABLE infra
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
         with:
-          directory: infra/
+          directory: vulnerable/infra/
           framework: terraform
           output_format: cli,sarif
           output_file_path: console,checkov-results.sarif
+          # RED scenario: hard fail on security issues
           soft_fail: false
           download_external_modules: false
           # Custom checks from policy/checkov/
           external_checks_dirs: policy/checkov
-          # Skip non-critical checks for demo (these are "nice to have" not security-critical)
-          # Phase 2 would enable stricter checks per ADR-002 gradual rollout strategy
-          # Core security (encryption, access control, least privilege) is enforced
-          skip_check: CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_290,CKV_AWS_355,CKV_AWS_354,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12,CKV_AWS_21,CKV_AWS_18,EFEX_AWS_001
+          # For RED scenario: detect all security issues
+          # Only skip non-security checks (cross-region, multi-AZ, etc.)
+          skip_check: CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12
         continue-on-error: false
 
       # OPA/Conftest for custom EFEX policies
@@ -243,7 +242,7 @@ jobs:
           sudo mv conftest /usr/local/bin/
 
       - name: Generate Terraform Plan JSON
-        working-directory: infra
+        working-directory: vulnerable/infra
         run: |
           terraform plan -out=tfplan -input=false 2>/dev/null || true
           terraform show -json tfplan > tfplan.json 2>/dev/null || echo '{}' > tfplan.json
@@ -252,7 +251,7 @@ jobs:
       - name: Run Conftest (EFEX Custom Policies)
         run: |
           echo "Running EFEX custom OPA policies..."
-          conftest test infra/tfplan.json \
+          conftest test vulnerable/infra/tfplan.json \
             --policy policy/terraform \
             --output json \
             --all-namespaces \
