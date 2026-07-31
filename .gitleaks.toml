@@ -124,8 +124,8 @@ regexes = [
     '''EXAMPLE''',
     '''placeholder''',
     '''your-.*-here''',
-    # Allow gitleaks:allow comments in vulnerable demo code
-    '''gitleaks:allow''',
+    # NOTE: gitleaks:allow comments are NOT whitelisted
+    # Demo secrets in vulnerable/ WILL be detected for RED scenario
 ]
 
 # Commits to ignore (if any known false positives)

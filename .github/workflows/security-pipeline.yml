@@ -87,31 +87,38 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Semgrep
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/python
-            p/security-audit
-            p/owasp-top-ten
-            p/command-injection
-            p/sql-injection
-            p/secrets
-          generateSarif: true
-          auditOn: push
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep on vulnerable code
+        run: |
+          semgrep scan \
+            --config p/python \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/command-injection \
+            --config p/sql-injection \
+            --config .semgrep/ \
+            --sarif \
+            --output semgrep.sarif \
+            --error \
+            vulnerable/app/ || SEMGREP_EXIT=$?
+
+          echo "Semgrep exit code: ${SEMGREP_EXIT:-0}"
+
+          if [ "${SEMGREP_EXIT:-0}" -gt 0 ]; then
+            echo "::error::EFEX-SEC-GATE: Semgrep found security vulnerabilities in vulnerable/app/"
+            exit 1
+          fi
 
       - name: Check for HIGH/CRITICAL findings
+        if: always()
         run: |
           if [ -f semgrep.sarif ]; then
             # Count high severity findings (level: error in SARIF)
             HIGH_COUNT=$(jq '[.runs[].results[] | select(.level == "error")] | length' semgrep.sarif 2>/dev/null || echo "0")
             echo "High severity findings: $HIGH_COUNT"
-
-            if [ "$HIGH_COUNT" -gt 0 ]; then
-              echo "::error::EFEX-SEC-GATE: Found $HIGH_COUNT high/critical severity findings. Build blocked."
-              jq -r '.runs[].results[] | select(.level == "error") | "- \(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' semgrep.sarif
-              exit 1
-            fi
+            echo "## SAST Findings: $HIGH_COUNT high/critical" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload Semgrep SARIF

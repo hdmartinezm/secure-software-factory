@@ -32,12 +32,12 @@ app = FastAPI(
 # EFEX-VULN-001: Hardcoded Secrets (DEMO VALUES - NOT REAL)
 # These are intentionally detectable by Gitleaks/Semgrep
 # =============================================================================
-DATABASE_PASSWORD = "HARDCODED_SECRET_FOR_DEMO_efex2024"  # gitleaks:allow demo
-SPEI_API_TOKEN = "DEMO_API_KEY_spei_tk_12345678"  # gitleaks:allow demo
-JWT_SECRET_KEY = "DEMO_JWT_SECRET_super_insecure_key"  # gitleaks:allow demo
-STRIPE_KEY = "sk_test_DEMO_KEY_not_real_abcdef123456"  # gitleaks:allow demo
-AWS_ACCESS_KEY = "AKIADEMO12345EXAMPLE"  # gitleaks:allow demo
-AWS_SECRET_KEY = "DEMO_SECRET_wJalrXUtnFEMI_K7MDENG_bPxRfiCY"  # gitleaks:allow demo
+DATABASE_PASSWORD = "HARDCODED_SECRET_FOR_DEMO_efex2024"
+SPEI_API_TOKEN = "DEMO_API_KEY_spei_tk_12345678"
+JWT_SECRET_KEY = "DEMO_JWT_SECRET_super_insecure_key"
+STRIPE_KEY = "sk_test_DEMO_KEY_not_real_abcdef123456"
+AWS_ACCESS_KEY = "AKIADEMO12345EXAMPLE"
+AWS_SECRET_KEY = "DEMO_SECRET_wJalrXUtnFEMI_K7MDENG_bPxRfiCY"
 
 # Database connection with hardcoded credentials
 DATABASE_URL = f"postgresql://efex_admin:{DATABASE_PASSWORD}@db.efex.mx:5432/transfers"
