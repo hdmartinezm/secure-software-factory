@@ -773,6 +773,291 @@ waivers/
 
 ---
 
+## Security Metrics & KPIs
+
+> **What gets measured gets improved.** These metrics enable data-driven security decisions and demonstrate ROI to leadership.
+
+### Metrics Dashboard
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    EFEX Security Platform Dashboard                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │  PIPELINE    │  │   MTTF       │  │  COVERAGE    │  │  FINDINGS    │     │
+│  │   2m 47s     │  │   1.8 days   │  │    94%       │  │    12 ↓      │     │
+│  │   ▼ 12%      │  │   ▼ 40%      │  │   ▲ 6%       │  │   ▼ 23%      │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘     │
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │  Critical Findings (Last 30 Days)                                    │   │
+│  │  ████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  Week 1: 45  │   │
+│  │  ████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  Week 2: 32  │   │
+│  │  ████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  Week 3: 24  │   │
+│  │  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  Week 4: 12  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Core Metrics
+
+#### 1. Pipeline Duration
+
+**Definition**: Time from push to security gate result.
+
+| Metric | Target | Current | Trend |
+|--------|--------|---------|-------|
+| P50 (median) | < 3 min | 2m 47s | ✅ |
+| P95 | < 5 min | 4m 12s | ✅ |
+| P99 | < 8 min | 6m 30s | ✅ |
+
+**Why it matters**: Fast feedback = developer adoption. Slow pipelines get skipped.
+
+```bash
+# Measure via GitHub API
+gh api repos/{owner}/{repo}/actions/runs \
+  --jq '[.workflow_runs[].run_duration_ms] | (add / length / 1000 / 60)'
+```
+
+#### 2. Critical/High Findings
+
+**Definition**: Open vulnerabilities by severity in production branches.
+
+| Severity | Target | Current | SLA |
+|----------|--------|---------|-----|
+| Critical | 0 | 0 | 24 hours |
+| High | < 5 | 3 | 7 days |
+| Medium | < 20 | 12 | 30 days |
+| Low | Track | 45 | Best effort |
+
+**Breakdown by Tool**:
+| Tool | Critical | High | Medium | Low |
+|------|----------|------|--------|-----|
+| Secrets (Gitleaks) | 0 | 0 | 0 | 0 |
+| SAST (Semgrep) | 0 | 2 | 5 | 12 |
+| SCA (Trivy) | 0 | 1 | 4 | 28 |
+| IaC (Checkov) | 0 | 0 | 3 | 5 |
+| Container (Trivy) | 0 | 0 | 0 | 0 |
+
+#### 3. Mean Time to Fix (MTTF)
+
+**Definition**: Average time from finding detection to remediation.
+
+| Severity | Target | Current | Trend |
+|----------|--------|---------|-------|
+| Critical | < 24h | 4h | ✅ ▼ |
+| High | < 7 days | 1.8 days | ✅ ▼ |
+| Medium | < 30 days | 12 days | ✅ |
+| Low | < 90 days | 45 days | ⚠️ |
+
+**Calculation**:
+```
+MTTF = Σ(fix_date - detection_date) / total_findings_fixed
+```
+
+**Tracking**:
+```yaml
+# GitHub Issue labels for tracking
+labels:
+  - security-finding
+  - severity-critical
+  - severity-high
+  - detected-2024-01-15
+  - fixed-2024-01-16
+```
+
+#### 4. Policy Violations
+
+**Definition**: Security policy violations caught by pipeline.
+
+| Policy Category | This Week | Last Week | Δ |
+|-----------------|-----------|-----------|---|
+| Hardcoded Secrets | 2 | 5 | ▼ 60% |
+| SQL Injection | 1 | 3 | ▼ 67% |
+| Insecure Dependencies | 4 | 8 | ▼ 50% |
+| IaC Misconfigurations | 6 | 12 | ▼ 50% |
+| Container Issues | 0 | 2 | ▼ 100% |
+| **Total** | **13** | **30** | **▼ 57%** |
+
+**Trend Analysis**: Declining violations indicate improving security awareness.
+
+#### 5. False Positive Rate
+
+**Definition**: Percentage of findings that are not actual vulnerabilities.
+
+| Tool | Total Findings | False Positives | Rate | Target |
+|------|----------------|-----------------|------|--------|
+| Gitleaks | 50 | 2 | 4% | < 5% ✅ |
+| Semgrep | 120 | 8 | 6.7% | < 10% ✅ |
+| Trivy | 85 | 3 | 3.5% | < 5% ✅ |
+| Checkov | 200 | 15 | 7.5% | < 10% ✅ |
+| **Overall** | **455** | **28** | **6.2%** | **< 10%** ✅ |
+
+**Tracking False Positives**:
+```yaml
+# Waiver with false_positive tag
+waivers/semgrep-fp-001.yaml:
+  id: "EFEX-WAIVER-FP-001"
+  finding_id: "python.lang.security.audit.dangerous-subprocess-use"
+  metadata:
+    type: "false_positive"  # Track for metrics
+```
+
+#### 6. Lead Time Impact
+
+**Definition**: Additional time security adds to deployment pipeline.
+
+| Stage | Before Security | After Security | Δ |
+|-------|-----------------|----------------|---|
+| Build | 2m 30s | 2m 30s | 0 |
+| Test | 5m 00s | 5m 00s | 0 |
+| Security | N/A | 2m 47s | +2m 47s |
+| Deploy | 3m 00s | 3m 00s | 0 |
+| **Total** | **10m 30s** | **13m 17s** | **+26%** |
+
+**Target**: Security overhead < 30% of total pipeline time.
+
+#### 7. Waiver Metrics
+
+**Definition**: Security exception tracking and hygiene.
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| Total Active Waivers | 12 | < 20 |
+| Expired Waivers | 1 | 0 |
+| Avg Waiver Age | 34 days | < 60 days |
+| Waivers Expiring (14 days) | 3 | Monitor |
+| Renewals This Month | 5 | Track |
+| Permanent Fixes | 8 | Maximize |
+
+**Waiver Health**:
+```
+Active:    ████████████░░░░░░░░  12
+Expiring:  ███░░░░░░░░░░░░░░░░░   3
+Expired:   █░░░░░░░░░░░░░░░░░░░   1
+```
+
+#### 8. Coverage
+
+**Definition**: Percentage of repositories with security scanning enabled.
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| Repos with Pipeline | 47/50 (94%) | 100% |
+| Branches Protected | 50/50 (100%) | 100% |
+| PR Checks Required | 45/50 (90%) | 100% |
+| SBOM Generated | 40/50 (80%) | 100% |
+| Artifacts Signed | 35/50 (70%) | 100% |
+
+**By Team**:
+| Team | Repos | Coverage | Status |
+|------|-------|----------|--------|
+| Platform | 10 | 100% | ✅ |
+| Payments | 8 | 100% | ✅ |
+| Core API | 12 | 92% | ⚠️ |
+| Mobile | 5 | 80% | ⚠️ |
+| Data | 15 | 93% | ⚠️ |
+
+### Metric Collection
+
+#### GitHub Actions Metrics
+
+```yaml
+# .github/workflows/metrics-collector.yml
+name: Security Metrics Collection
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight
+
+jobs:
+  collect-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect pipeline duration
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs \
+            --jq '.workflow_runs[:100] |
+                  { avg_duration: ([.[].run_duration_ms] | add / length / 1000),
+                    success_rate: ([.[].conclusion == "success"] | add / length * 100) }'
+
+      - name: Count open findings
+        run: |
+          # Query SARIF results from GitHub Security tab
+          gh api repos/${{ github.repository }}/code-scanning/alerts \
+            --jq 'group_by(.rule.severity) |
+                  map({severity: .[0].rule.severity, count: length})'
+
+      - name: Export to dashboard
+        run: |
+          # Send to Datadog/Grafana/etc.
+          curl -X POST "$METRICS_ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -d @metrics.json
+```
+
+#### Datadog Integration
+
+```yaml
+# datadog-metrics.yaml
+metrics:
+  - name: efex.security.pipeline_duration
+    type: gauge
+    tags:
+      - repo:secure-software-factory
+      - workflow:security-pipeline
+
+  - name: efex.security.findings
+    type: gauge
+    tags:
+      - severity:critical
+      - tool:semgrep
+
+  - name: efex.security.mttf
+    type: gauge
+    tags:
+      - severity:high
+```
+
+### Executive Dashboard
+
+| KPI | Status | Trend | Notes |
+|-----|--------|-------|-------|
+| **Security Posture** | 🟢 Good | ↑ 15% | No critical findings |
+| **Pipeline Health** | 🟢 Good | → Stable | 99.2% success rate |
+| **Developer Impact** | 🟢 Minimal | ↓ 12% | Faster scans |
+| **Compliance** | 🟢 Compliant | → Stable | SOC 2, CNBV |
+| **Waiver Hygiene** | 🟡 Attention | → | 1 expired waiver |
+| **Coverage** | 🟡 94% | ↑ 6% | 3 repos pending |
+
+### Monthly Security Report Template
+
+```markdown
+## EFEX Security Report - [Month Year]
+
+### Executive Summary
+- Critical findings: 0 (Target: 0) ✅
+- High findings: 3 (Target: <5) ✅
+- MTTF (High): 1.8 days (Target: <7) ✅
+- Coverage: 94% (Target: 100%) ⚠️
+
+### Highlights
+- Reduced HIGH findings by 40% vs last month
+- Pipeline duration improved 12% (now 2m 47s avg)
+- 3 new repositories onboarded
+
+### Action Items
+- [ ] Onboard remaining 3 repositories
+- [ ] Renew 3 waivers expiring this month
+- [ ] Investigate Semgrep false positive rate increase
+
+### Trends
+[Include charts/graphs]
+```
+
+---
+
 ## Quick Start
 
 ### Prerequisites
