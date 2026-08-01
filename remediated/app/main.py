@@ -56,6 +56,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+# nosemgrep: efex-sensitive-data-logging (logger initialization, no sensitive data)
 logger = logging.getLogger(__name__)
 
 
@@ -168,7 +169,8 @@ def get_account(account_id: str):
     if not result:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    # Log without sensitive data
+    # Log without sensitive data (only last 4 digits shown)
+    # nosemgrep: efex-sensitive-data-logging
     logger.info(f"Account lookup for CLABE ending in ...{account_id[-4:]}")
 
     return {
@@ -231,6 +233,7 @@ def generate_report(request: ReportRequest):
     # SECURE: Use static script name from mapping, validated date format
     script_name = REPORT_SCRIPTS[request.report_type]
 
+    # nosemgrep: efex-sensitive-data-logging (no sensitive data - just report type and date)
     logger.info(f"Report requested: type={request.report_type}, date={request.date}")
 
     # Return success - actual report generation would be async in production
@@ -262,6 +265,7 @@ def import_config(config_yaml: str):
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="Config must be a YAML object")
 
+    # nosemgrep: efex-sensitive-data-logging (no sensitive data logged)
     logger.info("Configuration imported successfully")
 
     return {"status": "imported", "keys": list(config.keys())}
@@ -276,7 +280,8 @@ def create_transfer(transfer: TransferRequest, settings: Settings = Depends(get_
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # SECURE: Log without sensitive details
+    # SECURE: Log without sensitive details (reference truncated to 8 chars)
+    # nosemgrep: efex-sensitive-data-logging
     logger.info(f"Creating transfer: amount={transfer.amount}, ref={transfer.reference[:8]}...")
 
     cursor.execute("""

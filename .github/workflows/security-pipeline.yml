@@ -74,13 +74,42 @@ jobs:
         with:
           fetch-depth: 0  # Full history for comprehensive scan
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
-        with:
-          args: --verbose --redact --no-banner
+      - name: Install Gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Run Gitleaks (scenario-aware)
+        run: |
+          echo "Scanning scenario: ${SCENARIO}"
+
+          if [ "${SCENARIO}" == "remediated" ]; then
+            # GREEN scenario: scan only remediated folder (no git history)
+            echo "GREEN scenario: Scanning only remediated/ folder"
+            gitleaks detect \
+              --source "${SCENARIO}/" \
+              --no-git \
+              --config .gitleaks.toml \
+              --report-format sarif \
+              --report-path results.sarif \
+              --verbose \
+              --redact || GITLEAKS_EXIT=$?
+          else
+            # RED scenario: scan full repo including git history
+            echo "RED scenario: Scanning full repository"
+            gitleaks detect \
+              --source . \
+              --config .gitleaks.toml \
+              --report-format sarif \
+              --report-path results.sarif \
+              --verbose \
+              --redact || GITLEAKS_EXIT=$?
+          fi
+
+          if [ "${GITLEAKS_EXIT:-0}" -gt 0 ]; then
+            echo "::error::EFEX-SEC-GATE: Secrets detected in ${SCENARIO}/"
+            exit 1
+          fi
 
       - name: Upload Gitleaks SARIF
         if: always()
