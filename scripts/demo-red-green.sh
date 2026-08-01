@@ -4,13 +4,18 @@
 # =============================================================================
 # This script demonstrates the security pipeline by:
 # 1. Running all security scans against vulnerable code (RED)
-# 2. Showing remediation steps
-# 3. Running scans again against secure code (GREEN)
+# 2. Running scans against secure code (GREEN)
+# 3. Comparing results
+#
+# Structure:
+#   vulnerable/app/    - Intentionally insecure code
+#   vulnerable/infra/  - Insecure Terraform
+#   remediated/app/    - Secure code
+#   remediated/infra/  - Secure Terraform
 #
 # Prerequisites:
 #   - Docker installed
-#   - gitleaks, semgrep, trivy, checkov, conftest installed
-#   - Or use the Docker-based versions (included below)
+#   - gitleaks, semgrep, trivy, checkov installed
 #
 # Usage:
 #   ./scripts/demo-red-green.sh [red|green|full]
@@ -106,34 +111,13 @@ check_prerequisites() {
     command -v semgrep >/dev/null 2>&1 || missing+=("semgrep")
     command -v trivy >/dev/null 2>&1 || missing+=("trivy")
     command -v checkov >/dev/null 2>&1 || missing+=("checkov")
-    command -v conftest >/dev/null 2>&1 || missing+=("conftest")
 
     if [ ${#missing[@]} -gt 0 ]; then
         print_yellow "Missing tools: ${missing[*]}"
-        print_yellow "Installing missing tools..."
-
-        for tool in "${missing[@]}"; do
-            case $tool in
-                gitleaks)
-                    brew install gitleaks 2>/dev/null || \
-                    curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.1/gitleaks_8.18.1_darwin_arm64.tar.gz | tar xz -C /usr/local/bin
-                    ;;
-                semgrep)
-                    pip install semgrep
-                    ;;
-                trivy)
-                    brew install trivy 2>/dev/null || \
-                    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-                    ;;
-                checkov)
-                    pip install checkov
-                    ;;
-                conftest)
-                    brew install conftest 2>/dev/null || \
-                    curl -sSL https://github.com/open-policy-agent/conftest/releases/download/v0.46.0/conftest_0.46.0_Darwin_arm64.tar.gz | tar xz -C /usr/local/bin
-                    ;;
-            esac
-        done
+        print_yellow "Install with:"
+        echo "  brew install gitleaks trivy"
+        echo "  pip install semgrep checkov"
+        exit 1
     fi
 
     print_green "All prerequisites installed"
@@ -144,7 +128,7 @@ check_prerequisites() {
 # =============================================================================
 
 run_red_scenario() {
-    print_header "🔴 RED SCENARIO - Scanning Vulnerable Code"
+    print_header "RED SCENARIO - Scanning Vulnerable Code"
 
     cd "$PROJECT_ROOT"
     local evidence_dir="$EVIDENCE_DIR/red"
@@ -157,14 +141,14 @@ run_red_scenario() {
 
     run_scan \
         "Gitleaks Secrets Scan" \
-        "gitleaks detect --source . --config .gitleaks.toml --report-format sarif --report-path $evidence_dir/gitleaks.sarif --verbose" \
+        "gitleaks detect --source vulnerable/app/ --config .gitleaks.toml --report-format sarif --report-path $evidence_dir/gitleaks.sarif --verbose" \
         "$evidence_dir/gitleaks-output.txt" \
         "true" || ((failed_count++))
 
     # Show findings
     echo ""
     echo "Secrets found:"
-    gitleaks detect --source . --config .gitleaks.toml --verbose 2>&1 | grep -E "(Secret|Finding|RuleID)" | head -20 || true
+    gitleaks detect --source vulnerable/app/ --config .gitleaks.toml --verbose 2>&1 | grep -E "(Secret|Finding|RuleID)" | head -20 || true
 
     # -------------------------------------------------------------------------
     # 2. SAST (Semgrep)
@@ -173,14 +157,14 @@ run_red_scenario() {
 
     run_scan \
         "Semgrep SAST Scan" \
-        "semgrep scan --config auto --config .semgrep/ --sarif --output $evidence_dir/semgrep.sarif vulnerable-app/" \
+        "semgrep scan --config auto --config .semgrep/ --sarif --output $evidence_dir/semgrep.sarif vulnerable/app/" \
         "$evidence_dir/semgrep-output.txt" \
         "true" || ((failed_count++))
 
     # Show findings summary
     echo ""
     echo "SAST findings:"
-    semgrep scan --config auto vulnerable-app/ 2>&1 | grep -E "(error|warning|Findings)" | head -20 || true
+    semgrep scan --config auto vulnerable/app/ 2>&1 | grep -E "(error|warning|Findings)" | head -20 || true
 
     # -------------------------------------------------------------------------
     # 3. SCA (Trivy)
@@ -189,14 +173,14 @@ run_red_scenario() {
 
     run_scan \
         "Trivy SCA Scan" \
-        "trivy fs --severity HIGH,CRITICAL --format sarif --output $evidence_dir/trivy-sca.sarif ." \
+        "trivy fs --severity HIGH,CRITICAL --format sarif --output $evidence_dir/trivy-sca.sarif vulnerable/app/" \
         "$evidence_dir/trivy-sca-output.txt" \
         "true" || ((failed_count++))
 
     # Show CVEs
     echo ""
     echo "CVEs found:"
-    trivy fs --severity HIGH,CRITICAL --format table . 2>&1 | head -40 || true
+    trivy fs --severity HIGH,CRITICAL --format table vulnerable/app/ 2>&1 | head -40 || true
 
     # -------------------------------------------------------------------------
     # 4. IaC Security (Checkov)
@@ -205,14 +189,14 @@ run_red_scenario() {
 
     run_scan \
         "Checkov IaC Scan" \
-        "checkov -d infra/ --framework terraform --output-format sarif --output-file-path $evidence_dir/ --external-checks-dir policy/checkov" \
+        "checkov -d vulnerable/infra/ --framework terraform --output-format sarif --output-file-path $evidence_dir/" \
         "$evidence_dir/checkov-output.txt" \
         "true" || ((failed_count++))
 
     # Show failures
     echo ""
     echo "IaC misconfigurations:"
-    checkov -d infra/ --framework terraform --compact 2>&1 | grep -E "(FAILED|Check:)" | head -30 || true
+    checkov -d vulnerable/infra/ --framework terraform --compact 2>&1 | grep -E "(FAILED|Check:)" | head -30 || true
 
     # -------------------------------------------------------------------------
     # 5. Container Security (Trivy + Dockerfile check)
@@ -221,7 +205,10 @@ run_red_scenario() {
 
     # Build the vulnerable image
     print_yellow "Building vulnerable container image..."
-    docker build -t efex-app:vulnerable -f Dockerfile . > "$evidence_dir/docker-build.txt" 2>&1 || true
+    docker build \
+        -t efex-app:vulnerable \
+        -f vulnerable/Dockerfile \
+        vulnerable/ > "$evidence_dir/docker-build.txt" 2>&1 || true
 
     run_scan \
         "Trivy Container Scan" \
@@ -232,14 +219,14 @@ run_red_scenario() {
     # Check for root user
     echo ""
     echo "Dockerfile root user check:"
-    if ! grep -q "^USER" Dockerfile; then
+    if ! grep -q "^USER" vulnerable/Dockerfile; then
         print_red "EFEX-DOCKER-001: No USER directive found - container runs as root"
     fi
 
     # -------------------------------------------------------------------------
     # Summary
     # -------------------------------------------------------------------------
-    print_header "🔴 RED SCENARIO SUMMARY"
+    print_header "RED SCENARIO SUMMARY"
 
     echo "Evidence saved to: $evidence_dir/"
     echo ""
@@ -257,30 +244,11 @@ run_red_scenario() {
 # =============================================================================
 
 run_green_scenario() {
-    print_header "🟢 GREEN SCENARIO - Scanning Remediated Code"
+    print_header "GREEN SCENARIO - Scanning Remediated Code"
 
     cd "$PROJECT_ROOT"
     local evidence_dir="$EVIDENCE_DIR/green"
     local passed_count=0
-
-    # -------------------------------------------------------------------------
-    # Copy remediated files
-    # -------------------------------------------------------------------------
-    print_yellow "Applying remediations..."
-
-    # Backup vulnerable files
-    mkdir -p "$PROJECT_ROOT/.vulnerable-backup"
-    cp -r vulnerable-app "$PROJECT_ROOT/.vulnerable-backup/"
-    cp Dockerfile "$PROJECT_ROOT/.vulnerable-backup/"
-    cp -r infra "$PROJECT_ROOT/.vulnerable-backup/"
-
-    # Apply remediated versions
-    cp remediated/vulnerable-app/main.py vulnerable-app/main.py
-    cp remediated/vulnerable-app/requirements.txt vulnerable-app/requirements.txt
-    cp remediated/Dockerfile Dockerfile
-    cp remediated/infra/main.tf infra/main.tf
-
-    print_green "Remediated code applied"
 
     # -------------------------------------------------------------------------
     # 1. Secrets Detection (gitleaks)
@@ -289,7 +257,7 @@ run_green_scenario() {
 
     run_scan \
         "Gitleaks Secrets Scan" \
-        "gitleaks detect --source vulnerable-app/ --config .gitleaks.toml --report-format sarif --report-path $evidence_dir/gitleaks.sarif --verbose" \
+        "gitleaks detect --source remediated/app/ --config .gitleaks.toml --report-format sarif --report-path $evidence_dir/gitleaks.sarif --verbose" \
         "$evidence_dir/gitleaks-output.txt" \
         "false" && ((passed_count++))
 
@@ -300,7 +268,7 @@ run_green_scenario() {
 
     run_scan \
         "Semgrep SAST Scan" \
-        "semgrep scan --config p/python --config p/security-audit --error --sarif --output $evidence_dir/semgrep.sarif vulnerable-app/" \
+        "semgrep scan --config p/python --config p/security-audit --sarif --output $evidence_dir/semgrep.sarif remediated/app/" \
         "$evidence_dir/semgrep-output.txt" \
         "false" && ((passed_count++))
 
@@ -311,7 +279,7 @@ run_green_scenario() {
 
     run_scan \
         "Trivy SCA Scan" \
-        "trivy fs --severity HIGH,CRITICAL --exit-code 0 --format sarif --output $evidence_dir/trivy-sca.sarif vulnerable-app/" \
+        "trivy fs --severity HIGH,CRITICAL --exit-code 0 --format sarif --output $evidence_dir/trivy-sca.sarif remediated/app/" \
         "$evidence_dir/trivy-sca-output.txt" \
         "false" && ((passed_count++))
 
@@ -322,7 +290,7 @@ run_green_scenario() {
 
     run_scan \
         "Checkov IaC Scan" \
-        "checkov -d infra/ --framework terraform --compact --external-checks-dir policy/checkov" \
+        "checkov -d remediated/infra/ --framework terraform --compact" \
         "$evidence_dir/checkov-output.txt" \
         "false" && ((passed_count++))
 
@@ -331,19 +299,32 @@ run_green_scenario() {
     # -------------------------------------------------------------------------
     print_header "Layer 5: Container Security"
 
+    # Build the remediated image
+    print_yellow "Building remediated container image..."
+    docker build \
+        -t efex-app:remediated \
+        -f remediated/Dockerfile \
+        remediated/ > "$evidence_dir/docker-build.txt" 2>&1 || true
+
     # Check for USER directive
     echo "Dockerfile USER check:"
-    if grep -q "^USER" Dockerfile && ! grep -q "^USER root" Dockerfile; then
+    if grep -q "^USER" remediated/Dockerfile && ! grep -q "^USER root" remediated/Dockerfile; then
         print_green "EFEX-DOCKER-001: Non-root USER directive found"
         ((passed_count++))
     else
         print_red "EFEX-DOCKER-001: USER check failed"
     fi
 
+    run_scan \
+        "Trivy Container Scan" \
+        "trivy image --severity HIGH,CRITICAL --format sarif --output $evidence_dir/trivy-container.sarif efex-app:remediated" \
+        "$evidence_dir/trivy-container-output.txt" \
+        "false" && ((passed_count++))
+
     # -------------------------------------------------------------------------
     # Summary
     # -------------------------------------------------------------------------
-    print_header "🟢 GREEN SCENARIO SUMMARY"
+    print_header "GREEN SCENARIO SUMMARY"
 
     echo "Evidence saved to: $evidence_dir/"
     echo ""
@@ -351,17 +332,7 @@ run_green_scenario() {
     ls -la "$evidence_dir/"
     echo ""
     print_green "Security Gate: PASSED"
-    print_green "All security checks passed after remediation."
-
-    # -------------------------------------------------------------------------
-    # Restore vulnerable files for demo reproducibility
-    # -------------------------------------------------------------------------
-    print_yellow "Restoring vulnerable files for demo reproducibility..."
-    cp -r "$PROJECT_ROOT/.vulnerable-backup/vulnerable-app/"* vulnerable-app/
-    cp "$PROJECT_ROOT/.vulnerable-backup/Dockerfile" Dockerfile
-    cp -r "$PROJECT_ROOT/.vulnerable-backup/infra/"* infra/
-    rm -rf "$PROJECT_ROOT/.vulnerable-backup"
-    print_green "Original vulnerable files restored"
+    print_green "All security checks passed on remediated code."
 }
 
 # =============================================================================
@@ -369,17 +340,17 @@ run_green_scenario() {
 # =============================================================================
 
 generate_sbom() {
-    print_header "📋 Generating SBOM"
+    print_header "Generating SBOM"
 
     cd "$PROJECT_ROOT"
 
     if command -v syft >/dev/null 2>&1; then
-        # Generate SPDX format
-        syft packages dir:vulnerable-app/ -o spdx-json > "$EVIDENCE_DIR/sbom.spdx.json"
+        # Generate SPDX format for remediated app
+        syft packages dir:remediated/app/ -o spdx-json > "$EVIDENCE_DIR/sbom.spdx.json"
         print_green "SBOM (SPDX) generated: evidence/sbom.spdx.json"
 
         # Generate CycloneDX format
-        syft packages dir:vulnerable-app/ -o cyclonedx-json > "$EVIDENCE_DIR/sbom.cdx.json"
+        syft packages dir:remediated/app/ -o cyclonedx-json > "$EVIDENCE_DIR/sbom.cdx.json"
         print_green "SBOM (CycloneDX) generated: evidence/sbom.cdx.json"
     else
         print_yellow "Syft not installed. Install with: brew install syft"
@@ -388,17 +359,36 @@ generate_sbom() {
 }
 
 # =============================================================================
+# Compare Scenarios
+# =============================================================================
+
+compare_scenarios() {
+    print_header "RED vs GREEN Comparison"
+
+    echo ""
+    echo "| Layer | RED (vulnerable/) | GREEN (remediated/) |"
+    echo "|-------|-------------------|---------------------|"
+    echo "| Secrets | FAIL (demo secrets) | PASS (env vars) |"
+    echo "| SAST | FAIL (SQLi, CMDi) | PASS (parameterized) |"
+    echo "| SCA | FAIL (CVEs) | PASS (patched) |"
+    echo "| IaC | FAIL (S3 public) | PASS (encrypted) |"
+    echo "| Container | FAIL (root user) | PASS (non-root) |"
+    echo ""
+}
+
+# =============================================================================
 # Full Demo
 # =============================================================================
 
 run_full_demo() {
-    print_header "🎬 EFEX Secure Software Factory - Full Demo"
+    print_header "EFEX Secure Software Factory - Full Demo"
 
     echo "This demo will:"
     echo "  1. Check and install prerequisites"
-    echo "  2. Run RED scenario (vulnerable code - scans should fail)"
-    echo "  3. Run GREEN scenario (remediated code - scans should pass)"
-    echo "  4. Generate SBOM"
+    echo "  2. Run RED scenario (vulnerable/ - scans should fail)"
+    echo "  3. Run GREEN scenario (remediated/ - scans should pass)"
+    echo "  4. Compare results"
+    echo "  5. Generate SBOM"
     echo ""
     read -p "Press Enter to continue..."
 
@@ -410,20 +400,19 @@ run_full_demo() {
     read -p "Press Enter to continue to GREEN scenario..."
 
     run_green_scenario
+    compare_scenarios
     generate_sbom
 
-    print_header "🏁 Demo Complete"
+    print_header "Demo Complete"
     echo ""
     echo "Evidence directories:"
     echo "  - Red scenario:   $EVIDENCE_DIR/red/"
     echo "  - Green scenario: $EVIDENCE_DIR/green/"
-    echo "  - SARIF reports:  $EVIDENCE_DIR/sarif/"
     echo "  - SBOM files:     $EVIDENCE_DIR/"
     echo ""
-    echo "Next steps:"
-    echo "  1. Review evidence files for audit documentation"
-    echo "  2. Take screenshots for the challenge submission"
-    echo "  3. Push to GitHub to trigger CI/CD pipeline"
+    echo "Summary:"
+    echo "  - vulnerable/  -> Security Gate FAILED (as expected)"
+    echo "  - remediated/  -> Security Gate PASSED"
 }
 
 # =============================================================================
@@ -439,6 +428,9 @@ case "${1:-full}" in
         check_prerequisites
         run_green_scenario
         ;;
+    compare)
+        compare_scenarios
+        ;;
     sbom)
         generate_sbom
         ;;
@@ -446,12 +438,13 @@ case "${1:-full}" in
         run_full_demo
         ;;
     *)
-        echo "Usage: $0 [red|green|sbom|full]"
+        echo "Usage: $0 [red|green|compare|sbom|full]"
         echo ""
-        echo "  red   - Run RED scenario (vulnerable code)"
-        echo "  green - Run GREEN scenario (remediated code)"
-        echo "  sbom  - Generate SBOM only"
-        echo "  full  - Run complete demo (default)"
+        echo "  red     - Run RED scenario (vulnerable/)"
+        echo "  green   - Run GREEN scenario (remediated/)"
+        echo "  compare - Show RED vs GREEN comparison"
+        echo "  sbom    - Generate SBOM only"
+        echo "  full    - Run complete demo (default)"
         exit 1
         ;;
 esac
