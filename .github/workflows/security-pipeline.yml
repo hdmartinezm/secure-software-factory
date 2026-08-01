@@ -2,6 +2,10 @@
 # =================================================
 # Multi-layer DevSecOps pipeline with Policy-as-Code gates
 #
+# Branch-based scenarios:
+#   - main, remediated branches  → GREEN scenario (secure code, pipeline PASSES)
+#   - vulnerable-demo branch     → RED scenario (vulnerable code, pipeline FAILS)
+#
 # Layers:
 #   1. Secrets Detection (gitleaks)
 #   2. SAST - Static Application Security Testing (Semgrep)
@@ -17,19 +21,11 @@ name: EFEX Security Pipeline
 
 on:
   push:
-    branches: [main, 'feature/**', 'fix/**']
+    branches: [main, vulnerable-demo, 'feature/**', 'fix/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
-      scenario:
-        description: 'Scenario to scan (vulnerable/remediated)'
-        required: false
-        default: 'vulnerable'
-        type: choice
-        options:
-          - vulnerable
-          - remediated
       skip_signing:
         description: 'Skip SBOM signing (for testing)'
         required: false
@@ -47,11 +43,12 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  # Scenario: vulnerable (RED) or remediated (GREEN)
-  SCENARIO: ${{ github.event.inputs.scenario || 'vulnerable' }}
-  DOCKERFILE_PATH: ${{ github.event.inputs.scenario || 'vulnerable' }}/Dockerfile
+  # Auto-detect scenario based on branch name:
+  #   - vulnerable-demo branch → vulnerable (RED)
+  #   - main/other branches    → remediated (GREEN)
+  SCENARIO: ${{ contains(github.ref_name, 'vulnerable') && 'vulnerable' || 'remediated' }}
+  DOCKERFILE_PATH: ${{ contains(github.ref_name, 'vulnerable') && 'vulnerable' || 'remediated' }}/Dockerfile
   # Security Gate Mode: observe (log only), advise (warn), enforce (block)
-  # Can be overridden via workflow_dispatch or repository variable
   SECURITY_GATE_MODE: ${{ inputs.security_gate_mode || vars.SECURITY_GATE_MODE || 'enforce' }}
 
 # Cancel in-progress runs for same branch
