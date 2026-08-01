@@ -22,6 +22,14 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      scenario:
+        description: 'Scenario to scan (vulnerable/remediated)'
+        required: false
+        default: 'vulnerable'
+        type: choice
+        options:
+          - vulnerable
+          - remediated
       skip_signing:
         description: 'Skip SBOM signing (for testing)'
         required: false
@@ -39,6 +47,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Scenario: vulnerable (RED) or remediated (GREEN)
+  SCENARIO: ${{ github.event.inputs.scenario || 'vulnerable' }}
+  DOCKERFILE_PATH: ${{ github.event.inputs.scenario || 'vulnerable' }}/Dockerfile
   # Security Gate Mode: observe (log only), advise (warn), enforce (block)
   # Can be overridden via workflow_dispatch or repository variable
   SECURITY_GATE_MODE: ${{ inputs.security_gate_mode || vars.SECURITY_GATE_MODE || 'enforce' }}
@@ -102,8 +113,9 @@ jobs:
       - name: Install Semgrep
         run: pip install semgrep
 
-      - name: Run Semgrep on vulnerable code
+      - name: Run Semgrep scan
         run: |
+          echo "Scanning: ${SCENARIO}/app/"
           semgrep scan \
             --config p/python \
             --config p/security-audit \
@@ -114,12 +126,12 @@ jobs:
             --sarif \
             --output semgrep.sarif \
             --error \
-            vulnerable/app/ || SEMGREP_EXIT=$?
+            "${SCENARIO}/app/" || SEMGREP_EXIT=$?
 
           echo "Semgrep exit code: ${SEMGREP_EXIT:-0}"
 
           if [ "${SEMGREP_EXIT:-0}" -gt 0 ]; then
-            echo "::error::EFEX-SEC-GATE: Semgrep found security vulnerabilities in vulnerable/app/"
+            echo "::error::EFEX-SEC-GATE: Semgrep found security vulnerabilities in ${SCENARIO}/app/"
             exit 1
           fi
 
@@ -165,10 +177,11 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: 'vulnerable/app'
+          scan-ref: '${{ env.SCENARIO }}/app'
           severity: 'CRITICAL,HIGH'
-          # RED scenario: exit-code 1 to block vulnerable dependencies
-          exit-code: '1'
+          # RED scenario (vulnerable): exit-code 1 to block
+          # GREEN scenario (remediated): exit-code 0 to pass
+          exit-code: ${{ env.SCENARIO == 'vulnerable' && '1' || '0' }}
           format: 'sarif'
           output: 'trivy-sca.sarif'
           ignore-unfixed: true
@@ -179,7 +192,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
-          scan-ref: 'vulnerable/app'
+          scan-ref: '${{ env.SCENARIO }}/app'
           severity: 'CRITICAL,HIGH'
           format: 'table'
           output: 'trivy-sca-report.txt'
@@ -231,25 +244,25 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform Init (for plan)
-        working-directory: vulnerable/infra
+        working-directory: ${{ env.SCENARIO }}/infra
         run: terraform init -backend=false
         continue-on-error: true
 
-      # Checkov scan with custom checks - scanning VULNERABLE infra
+      # Checkov scan with custom checks
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
         with:
-          directory: vulnerable/infra/
+          directory: ${{ env.SCENARIO }}/infra/
           framework: terraform
           output_format: cli,sarif
           output_file_path: console,checkov-results.sarif
-          # RED scenario: hard fail on security issues
-          soft_fail: false
+          # RED scenario (vulnerable): hard fail on security issues
+          # GREEN scenario (remediated): soft fail (best practice warnings only)
+          soft_fail: ${{ env.SCENARIO == 'remediated' }}
           download_external_modules: false
           # Custom checks from policy/checkov/
           external_checks_dirs: policy/checkov
-          # For RED scenario: detect all security issues
-          # Only skip non-security checks (cross-region, multi-AZ, etc.)
+          # Skip non-security checks (cross-region, multi-AZ, etc.)
           skip_check: CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12
         continue-on-error: false
 
@@ -261,7 +274,7 @@ jobs:
           sudo mv conftest /usr/local/bin/
 
       - name: Generate Terraform Plan JSON
-        working-directory: vulnerable/infra
+        working-directory: ${{ env.SCENARIO }}/infra
         run: |
           terraform plan -out=tfplan -input=false 2>/dev/null || true
           terraform show -json tfplan > tfplan.json 2>/dev/null || echo '{}' > tfplan.json
@@ -269,19 +282,21 @@ jobs:
 
       - name: Run Conftest (EFEX Custom Policies)
         run: |
-          echo "Running EFEX custom OPA policies..."
-          conftest test vulnerable/infra/tfplan.json \
+          echo "Running EFEX custom OPA policies on ${SCENARIO}/infra..."
+          conftest test "${SCENARIO}/infra/tfplan.json" \
             --policy policy/terraform \
             --output json \
             --all-namespaces \
             > conftest-results.json 2>&1 || true
 
-          # Check for failures
+          # Check for failures (only block for vulnerable scenario)
           FAILURES=$(jq '[.[] | select(.failures | length > 0)] | length' conftest-results.json 2>/dev/null || echo "0")
           if [ "$FAILURES" -gt 0 ]; then
             echo "::error::EFEX Policy violations detected:"
             jq -r '.[] | .failures[]? | "- \(.msg)"' conftest-results.json
-            exit 1
+            if [ "${SCENARIO}" == "vulnerable" ]; then
+              exit 1
+            fi
           fi
         continue-on-error: false
 
@@ -315,10 +330,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Display scenario info
+        run: |
+          echo "## Container Security Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Scenario:** \`${SCENARIO}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Dockerfile:** \`${DOCKERFILE_PATH}\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
         with:
-          dockerfile: Dockerfile
+          dockerfile: ${{ env.DOCKERFILE_PATH }}
           failure-threshold: error
           format: sarif
           output-file: hadolint.sarif
@@ -326,22 +347,31 @@ jobs:
 
       - name: Check for root user in Dockerfile
         run: |
-          if ! grep -q "^USER" Dockerfile; then
+          DOCKERFILE="${DOCKERFILE_PATH}"
+          echo "Checking: ${DOCKERFILE}"
+
+          if ! grep -q "^USER" "${DOCKERFILE}"; then
             echo "::error::EFEX-SEC-004: Dockerfile must specify a non-root USER directive"
             echo "Add 'USER 1000:1000' before CMD instruction"
             exit 1
           fi
 
-          if grep -q "^USER root" Dockerfile; then
+          if grep -q "^USER root" "${DOCKERFILE}"; then
             echo "::error::EFEX-SEC-005: Dockerfile explicitly runs as root"
             exit 1
           fi
+
+          echo "✅ Dockerfile USER check passed"
 
       - name: Build container image
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t "efex-app:${IMAGE_TAG}" .
+          echo "Building from: ${DOCKERFILE_PATH}"
+          docker build \
+            -t "efex-app:${IMAGE_TAG}" \
+            -f "${DOCKERFILE_PATH}" \
+            "${SCENARIO}/"
 
       - name: Run Trivy container scan
         env:
@@ -350,9 +380,9 @@ jobs:
         with:
           image-ref: 'efex-app:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          # For demo: report but don't block (baseline approach per ADR-002)
-          # Production: exit-code: '1' with approved baseline
-          exit-code: '0'
+          # RED scenario (vulnerable): exit-code 1 to block
+          # GREEN scenario (remediated): exit-code 0 to pass
+          exit-code: ${{ env.SCENARIO == 'vulnerable' && '1' || '0' }}
           format: 'sarif'
           output: 'trivy-container.sarif'
           ignore-unfixed: true
@@ -580,7 +610,8 @@ jobs:
         id: build-push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ env.SCENARIO }}
+          file: ${{ env.DOCKERFILE_PATH }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
