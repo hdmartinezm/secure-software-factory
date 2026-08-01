@@ -7,7 +7,7 @@
 
 ## Architecture Overview
 
-![EFEX Secure Software Factory Architecture](imagenes/resumen.png)
+![EFEX Secure Software Factory Architecture](docs/images/secure-software-factory-architecture.png)
 
 ## Overview
 
@@ -21,7 +21,7 @@ This repository demonstrates a **Secure Software Factory** for EFEX, a fintech p
 
 ## Pipeline Flow
 
-![EFEX Security Pipeline Flow](imagenes/Flujo.png)
+![EFEX Security Pipeline Flow](docs/images/security-pipeline-flow.png)
 
 ## Pipeline Evidence (Live Runs)
 
