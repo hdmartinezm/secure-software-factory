@@ -5,6 +5,10 @@
 
 [![Security Pipeline](https://github.com/hdmartinezm/secure-software-factory/actions/workflows/security-pipeline.yml/badge.svg)](https://github.com/hdmartinezm/secure-software-factory/actions/workflows/security-pipeline.yml)
 
+## Architecture Overview
+
+![EFEX Secure Software Factory Architecture](imagenes/resumen.png)
+
 ## Overview
 
 This repository demonstrates a **Secure Software Factory** for EFEX, a fintech platform handling treasury and FX operations in the Mexico-US corridor. The implementation includes:
@@ -14,6 +18,10 @@ This repository demonstrates a **Secure Software Factory** for EFEX, a fintech p
 3. **Multi-layer DevSecOps Pipeline** - GitHub Actions with 7 security gates
 4. **Policy-as-Code Gates** - Custom Gitleaks, Semgrep, and Checkov policies for EFEX
 5. **Supply Chain Security** - SBOM generation with Syft and artifact signing with cosign
+
+## Pipeline Flow
+
+![EFEX Security Pipeline Flow](imagenes/Flujo.png)
 
 ## Pipeline Evidence (Live Runs)
 
