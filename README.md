@@ -701,13 +701,23 @@ waiver-check:
       run: python scripts/validate-waivers.py --strict
 ```
 
-**Pipeline Behavior:**
-| Waiver Status | Pipeline Action |
-|---------------|-----------------|
-| Valid waiver exists | Finding bypassed |
-| Expired waiver | Warning (or fail in strict mode) |
-| No waiver | Finding blocks pipeline |
-| Invalid waiver | Error + finding blocks |
+**Pipeline Behavior by Mode:**
+
+The pipeline respects `SECURITY_GATE_MODE` (set via repository variable or workflow input):
+
+| Mode | Expired Waiver | Invalid Waiver | Description |
+|------|----------------|----------------|-------------|
+| `observe` | Log only | Log only | Week 1 rollout - baseline |
+| `advise` | Warning | Warning | Week 2 rollout - notify |
+| `enforce` | **Block build** | **Block build** | Week 3+ production |
+
+```yaml
+# Set mode via repository variable (Settings → Variables)
+# vars.SECURITY_GATE_MODE = "enforce"
+
+# Or override via workflow_dispatch input
+gh workflow run security-pipeline.yml -f security_gate_mode=advise
+```
 
 ### Waiver Lifecycle
 

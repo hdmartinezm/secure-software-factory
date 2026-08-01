@@ -26,10 +26,22 @@ on:
         description: 'Skip SBOM signing (for testing)'
         required: false
         default: 'false'
+      security_gate_mode:
+        description: 'Security gate mode (observe/advise/enforce)'
+        required: false
+        default: 'enforce'
+        type: choice
+        options:
+          - observe
+          - advise
+          - enforce
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  # Security Gate Mode: observe (log only), advise (warn), enforce (block)
+  # Can be overridden via workflow_dispatch or repository variable
+  SECURITY_GATE_MODE: ${{ inputs.security_gate_mode || vars.SECURITY_GATE_MODE || 'enforce' }}
 
 # Cancel in-progress runs for same branch
 concurrency:
@@ -388,12 +400,22 @@ jobs:
   # WAIVER VALIDATION
   # Validates security exception waivers and checks for expiration
   # ===========================================================================
+  # ===========================================================================
+  # WAIVER VALIDATION
+  # Validates security exception waivers and checks for expiration
+  #
+  # Behavior based on SECURITY_GATE_MODE:
+  #   - observe: Log only, never block
+  #   - advise:  Warn on expired waivers, don't block
+  #   - enforce: Block build on expired/invalid waivers
+  # ===========================================================================
   waiver-check:
     name: "📜 Waiver Validation"
     runs-on: ubuntu-latest
     outputs:
       expired_count: ${{ steps.validate.outputs.expired_count }}
       valid_count: ${{ steps.validate.outputs.valid_count }}
+      waiver_status: ${{ steps.validate.outputs.waiver_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -410,6 +432,8 @@ jobs:
         id: validate
         run: |
           echo "## 📜 Waiver Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Mode:** \`${SECURITY_GATE_MODE}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           # Run waiver validation
@@ -431,12 +455,32 @@ jobs:
 
           if [ "${EXPIRED}" -gt 0 ] || [ "${INVALID}" -gt 0 ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "⚠️ **Action Required**: Renew or remove expired/invalid waivers" >> "$GITHUB_STEP_SUMMARY"
+
+            case "${SECURITY_GATE_MODE}" in
+              observe)
+                echo "ℹ️ **Mode: Observe** - Logging only, not blocking" >> "$GITHUB_STEP_SUMMARY"
+                echo "waiver_status=warning" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              advise)
+                echo "⚠️ **Mode: Advise** - Warning issued, not blocking" >> "$GITHUB_STEP_SUMMARY"
+                echo "::warning::Expired/invalid waivers found. Action required before enforce mode."
+                echo "waiver_status=warning" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              enforce)
+                echo "🚫 **Mode: Enforce** - Build blocked due to expired/invalid waivers" >> "$GITHUB_STEP_SUMMARY"
+                echo "::error::EFEX-SEC-GATE: Expired or invalid waivers detected. Renew or fix before merge."
+                echo "waiver_status=failed" >> "$GITHUB_OUTPUT"
+                exit 1
+                ;;
+            esac
           fi
 
-          # Exit with validation result
-          exit ${WAIVER_EXIT:-0}
-        continue-on-error: true  # Don't block pipeline, just warn
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ All waivers valid" >> "$GITHUB_STEP_SUMMARY"
+          echo "waiver_status=passed" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Upload waiver report
         if: always()
