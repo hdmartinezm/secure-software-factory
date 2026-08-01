@@ -80,9 +80,12 @@ htmlcov/
 *.log
 logs/
 
-# Security scan results (keep in evidence/ only)
+# Security scan results (generated outputs - not committed)
 *.sarif
-!evidence/**/*.sarif
+evidence/**/*.sarif
+evidence/**/*-output.txt
+evidence/**/*.txt
+!evidence/**/*.md
 
 # Build artifacts
 *.tar.gz
