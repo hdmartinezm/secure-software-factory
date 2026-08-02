@@ -18,3 +18,18 @@ CVE-2026-26007
 # MySQL Connector known issues in bundled OpenSSL
 # Awaiting upstream fix in next release
 # Reference: https://dev.mysql.com/doc/relnotes/connector-python/en/
+
+# pyasn1 vulnerabilities - pinned by python-jose dependency (requires pyasn1<0.5.0)
+# These are in a transitive dependency with version constraints we cannot override
+# Risk accepted: JOSE token parsing is server-side only, no untrusted ASN.1 input
+# Reference: https://github.com/mpdavis/python-jose/issues/375
+CVE-2026-23490
+CVE-2026-30922
+CVE-2026-59884
+CVE-2026-59885
+CVE-2026-59886
+
+# jaraco.context vulnerability - transitive dependency of setuptools
+# Path traversal requires malicious tar archive processing (not in our use case)
+# Reference: GHSA-58pv-8j8x-9vj2
+CVE-2026-23949
