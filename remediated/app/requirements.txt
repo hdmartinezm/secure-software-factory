@@ -1,6 +1,7 @@
 # EFEX Transfer Service Dependencies - REMEDIATED
 # =================================================
 # All vulnerable dependencies upgraded to secure versions
+# Last updated: 2025-08-02
 
 # Web framework
 fastapi==0.109.0
@@ -23,22 +24,24 @@ numpy==1.26.3
 # CVE-2023-37920 FIXED - upgraded from 2022.12.7
 certifi==2024.2.2
 
-# CVE-2022-40897 FIXED - upgraded from 57.0.0
-setuptools==69.0.3
+# CVE-2024-6345, CVE-2025-47273 FIXED - upgraded from 69.0.3
+setuptools==78.1.1
 
-# CVE-2023-43804 FIXED - upgraded from 1.26.5
-urllib3==2.1.0
+# CVE-2025-66418, CVE-2025-66471, CVE-2026-21441, CVE-2026-44431 FIXED
+urllib3==2.7.0
 
-# Database
-mysql-connector-python==8.3.0
+# CVE-2024-21272 FIXED - upgraded from 8.3.0
+mysql-connector-python==9.1.0
 
 # Data validation
 pydantic==2.5.3
 
-# Security
-python-jose[cryptography]==3.3.0
+# CVE-2024-33663 FIXED (CRITICAL) - upgraded from 3.3.0
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
+
+# CVE-2024-24762, CVE-2024-53981, CVE-2026-24486, CVE-2026-42561, CVE-2026-53539 FIXED
+python-multipart==0.0.30
 
 # Pinned pip for reproducibility
 pip==24.0
