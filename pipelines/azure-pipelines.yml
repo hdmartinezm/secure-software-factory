@@ -31,6 +31,11 @@ variables:
   # Container registry (Azure Container Registry)
   ACR_NAME: 'efexacr'
   IMAGE_NAME: 'efex-transfer-service'
+  # Scenario configuration (remediated = secure, vulnerable = demo)
+  SCENARIO: 'remediated'
+  APP_PATH: '$(SCENARIO)/app'
+  INFRA_PATH: '$(SCENARIO)/infra'
+  DOCKERFILE_PATH: '$(SCENARIO)/Dockerfile'
 
 stages:
   # ===========================================================================
@@ -86,7 +91,7 @@ stages:
                 --sarif \
                 --output semgrep.sarif \
                 --error \
-                vulnerable-app/
+                $(APP_PATH)/
             displayName: 'Run Semgrep'
 
           - task: PublishBuildArtifacts@1
@@ -113,7 +118,7 @@ stages:
                 --ignore-unfixed \
                 --format sarif \
                 --output trivy-sca.sarif \
-                vulnerable-app/
+                $(APP_PATH)/
             displayName: 'Run Trivy SCA'
 
           - task: PublishBuildArtifacts@1
@@ -138,7 +143,7 @@ stages:
 
           - script: |
               checkov \
-                --directory infra/ \
+                --directory $(INFRA_PATH)/ \
                 --framework terraform \
                 --output cli \
                 --output sarif \
@@ -190,7 +195,8 @@ stages:
             displayName: 'Build Image'
             inputs:
               command: 'build'
-              Dockerfile: 'Dockerfile'
+              Dockerfile: '$(DOCKERFILE_PATH)'
+              buildContext: '$(SCENARIO)/'
               tags: |
                 $(Build.BuildId)
                 $(Build.SourceVersion)

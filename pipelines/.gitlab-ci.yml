@@ -24,6 +24,11 @@ variables:
   # Container registry
   REGISTRY: $CI_REGISTRY
   IMAGE_NAME: $CI_REGISTRY_IMAGE
+  # Scenario configuration (remediated = secure, vulnerable = demo)
+  SCENARIO: "remediated"
+  APP_PATH: "${SCENARIO}/app"
+  INFRA_PATH: "${SCENARIO}/infra"
+  DOCKERFILE_PATH: "${SCENARIO}/Dockerfile"
 
 # =============================================================================
 # Default settings
@@ -59,7 +64,7 @@ sast-analysis:
   stage: security
   image: returntocorp/semgrep:latest
   script:
-    - semgrep scan --config auto --config .semgrep/ --sarif --output semgrep.sarif --error vulnerable-app/
+    - semgrep scan --config auto --config .semgrep/ --sarif --output semgrep.sarif --error $APP_PATH/
   artifacts:
     when: always
     paths:
@@ -76,7 +81,7 @@ dependency-scan:
   stage: security
   image: aquasec/trivy:latest
   script:
-    - trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --format sarif --output trivy-sca.sarif vulnerable-app/
+    - trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --format sarif --output trivy-sca.sarif $APP_PATH/
   artifacts:
     when: always
     paths:
@@ -93,7 +98,7 @@ iac-security:
   stage: security
   image: bridgecrew/checkov:latest
   script:
-    - checkov --directory infra/ --framework terraform --output sarif --output-file-path . --hard-fail-on HIGH
+    - checkov --directory $INFRA_PATH/ --framework terraform --output sarif --output-file-path . --hard-fail-on HIGH
   artifacts:
     when: always
     paths:
@@ -110,16 +115,16 @@ container-security:
   stage: security
   image: hadolint/hadolint:latest-debian
   script:
-    - hadolint Dockerfile --format sarif > hadolint.sarif || true
+    - hadolint $DOCKERFILE_PATH --format sarif > hadolint.sarif || true
     - |
-      if grep -q "^USER" Dockerfile && ! grep -q "^USER root" Dockerfile; then
+      if grep -q "^USER" $DOCKERFILE_PATH && ! grep -q "^USER root" $DOCKERFILE_PATH; then
         echo "✓ Dockerfile uses non-root user"
       else
         echo "✗ Dockerfile must specify non-root USER"
         exit 1
       fi
     - |
-      if grep -q "^HEALTHCHECK" Dockerfile; then
+      if grep -q "^HEALTHCHECK" $DOCKERFILE_PATH; then
         echo "✓ Dockerfile has HEALTHCHECK"
       else
         echo "⚠ Consider adding HEALTHCHECK directive"
@@ -132,8 +137,6 @@ container-security:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-    - exists:
-        - Dockerfile
 
 # =============================================================================
 # SECURITY GATE
@@ -174,7 +177,7 @@ build-container:
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
-    - docker build -t $IMAGE_NAME:$CI_COMMIT_SHA -t $IMAGE_NAME:$CI_COMMIT_REF_SLUG .
+    - docker build -f $DOCKERFILE_PATH -t $IMAGE_NAME:$CI_COMMIT_SHA -t $IMAGE_NAME:$CI_COMMIT_REF_SLUG $SCENARIO/
     - docker push $IMAGE_NAME:$CI_COMMIT_SHA
     - docker push $IMAGE_NAME:$CI_COMMIT_REF_SLUG
   needs:
