@@ -312,25 +312,42 @@ jobs:
       - name: Terraform Init (for plan)
         working-directory: ${{ env.SCENARIO }}/infra
         run: terraform init -backend=false
-        continue-on-error: true
 
-      # Checkov scan with custom checks
+      # Checkov scan with explicit exit code control
       - name: Run Checkov
-        uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # v12
-        with:
-          directory: ${{ env.SCENARIO }}/infra/
-          framework: terraform
-          output_format: cli,sarif
-          output_file_path: console,checkov-results.sarif
-          # enforce: hard fail on security issues
-          # observe/advise: soft fail (report only)
-          soft_fail: ${{ env.SECURITY_GATE_MODE != 'enforce' }}
-          download_external_modules: false
-          # Custom checks from policy/checkov/
-          external_checks_dirs: policy/checkov
-          # Skip non-security checks (cross-region, multi-AZ, S3 access logging since we have VPC Flow Logs)
-          skip_check: CKV_AWS_18,CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12
-        continue-on-error: false
+        id: checkov
+        run: |
+          set +e
+
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -w /workspace \
+            ghcr.io/bridgecrewio/checkov:3.3.8 \
+            -d "${SCENARIO}/infra/" \
+            --framework terraform \
+            --external-checks-dir policy/checkov \
+            --output cli \
+            --output sarif \
+            --output-file-path console,checkov-results.sarif \
+            --skip-check CKV_AWS_18,CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12
+
+          CHECKOV_EXIT=$?
+          set -e
+
+          echo "checkov_exit=${CHECKOV_EXIT}" >> "$GITHUB_OUTPUT"
+          echo "Checkov exit code: ${CHECKOV_EXIT}"
+
+          if [ "${CHECKOV_EXIT}" -ne 0 ]; then
+            echo "::error::IaC security violations detected by Checkov"
+
+            if [ "${SECURITY_GATE_MODE}" == "enforce" ]; then
+              exit "${CHECKOV_EXIT}"
+            fi
+
+            echo "::warning::IaC findings detected, but gate mode is ${SECURITY_GATE_MODE} (not blocking)"
+          else
+            echo "✅ Checkov: No IaC security violations"
+          fi
 
       # OPA/Conftest for custom EFEX policies
       - name: Setup Conftest
@@ -341,27 +358,33 @@ jobs:
 
       - name: Generate Terraform Plan JSON
         working-directory: ${{ env.SCENARIO }}/infra
+        env:
+          # Dummy credentials for offline plan (provider has skip_* settings)
+          AWS_ACCESS_KEY_ID: "AKIADEMO00000000000"
+          AWS_SECRET_ACCESS_KEY: "demo-secret-key-not-real"
+          AWS_DEFAULT_REGION: "us-east-1"
         run: |
-          # Generate Terraform plan
-          # Note: In CI without AWS credentials, plan will fail - this is expected for public repo demos
-          # Checkov still validates HCL directly; OPA/Conftest requires a valid plan
-          PLAN_SUCCESS=false
-          if terraform plan -out=tfplan -input=false 2>/dev/null; then
-            PLAN_SUCCESS=true
-            terraform show -json tfplan > tfplan.json 2>/dev/null
+          # Generate Terraform plan with dummy credentials
+          # Provider is configured with skip_credentials_validation = true
+          set +e
+          terraform plan -refresh=false -input=false -out=tfplan 2>&1
+          PLAN_EXIT=$?
+          set -e
+
+          if [ "${PLAN_EXIT}" -eq 0 ]; then
+            terraform show -json tfplan > tfplan.json
+            echo "✅ Valid Terraform plan JSON generated"
+            echo "✅ OPA policies will analyze planned resources"
           else
-            echo "::warning::Terraform plan failed (likely no AWS credentials in CI)"
-            echo "::notice::OPA policies require a valid plan - Checkov HCL analysis still applies"
+            echo "::warning::Terraform plan failed (exit code: ${PLAN_EXIT})"
             echo '{}' > tfplan.json
           fi
 
-          # Validate the JSON and inform about OPA coverage
+          # Validate the JSON
           if jq -e '.format_version' tfplan.json >/dev/null 2>&1; then
-            echo "✅ Valid Terraform plan JSON (format_version: $(jq -r '.format_version' tfplan.json))"
-            echo "✅ OPA policies will analyze planned resources"
-          else
-            echo "::notice::Empty plan JSON - OPA policies will not detect plan-based violations"
-            echo "::notice::Checkov HCL analysis provides static coverage for IaC security"
+            echo "Plan format version: $(jq -r '.format_version' tfplan.json)"
+            RESOURCE_COUNT=$(jq '[.resource_changes // [] | .[]] | length' tfplan.json)
+            echo "Resources in plan: ${RESOURCE_COUNT}"
           fi
 
       - name: Run Conftest (EFEX Custom Policies)
