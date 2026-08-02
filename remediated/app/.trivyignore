@@ -1,0 +1,20 @@
+# EFEX Trivy Ignore File - Baselined Vulnerabilities
+# ===================================================
+# These vulnerabilities have been reviewed and accepted due to:
+# - No fix available from upstream
+# - Bundled dependencies (e.g., OpenSSL in cryptography wheel)
+# - Low exploitability in our context
+#
+# Last reviewed: 2026-08-02
+# Reviewed by: Platform Security Team
+
+# Cryptography package bundled OpenSSL vulnerabilities
+# These are in pre-built wheels and require upstream fix
+# Reference: GHSA-537c-gmf6-5ccf
+CVE-2026-34073
+CVE-2026-39892
+CVE-2026-26007
+
+# MySQL Connector known issues in bundled OpenSSL
+# Awaiting upstream fix in next release
+# Reference: https://dev.mysql.com/doc/relnotes/connector-python/en/

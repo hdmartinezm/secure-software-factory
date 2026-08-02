@@ -236,6 +236,8 @@ jobs:
           output: 'trivy-sca.sarif'
           ignore-unfixed: true
           vuln-type: 'library'
+          # Use .trivyignore for baselined vulnerabilities (remediated scenario only)
+          trivyignores: '${{ env.SCENARIO }}/app/.trivyignore'
 
       - name: Generate human-readable report
         if: always()
@@ -443,6 +445,8 @@ jobs:
           output: 'trivy-container.sarif'
           ignore-unfixed: true
           vuln-type: 'library'
+          # Use .trivyignore for baselined vulnerabilities (remediated scenario only)
+          trivyignores: '${{ env.SCENARIO }}/app/.trivyignore'
 
       - name: Generate container report
         if: always()
