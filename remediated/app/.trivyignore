@@ -33,3 +33,13 @@ CVE-2026-59886
 # Path traversal requires malicious tar archive processing (not in our use case)
 # Reference: GHSA-58pv-8j8x-9vj2
 CVE-2026-23949
+
+# Base image (python:3.11-slim-bookworm) pip and setuptools
+# These are in the system Python, not in our virtualenv
+# Our app uses pip==26.1.2 and setuptools==83.0.0 in /opt/venv
+CVE-2025-8869
+CVE-2026-1703
+CVE-2026-3219
+CVE-2026-6357
+CVE-2026-8643
+CVE-2026-59890
