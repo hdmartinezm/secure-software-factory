@@ -1,7 +1,7 @@
 # EFEX Transfer Service Dependencies - REMEDIATED
 # =================================================
 # All vulnerable dependencies upgraded to secure versions
-# Last updated: 2025-08-02
+# Last updated: 2026-08-02
 
 # Web framework
 fastapi==0.109.0
@@ -9,8 +9,8 @@ uvicorn==0.27.0
 
 # REMEDIATED: All CVEs fixed with version upgrades
 
-# CVE-2023-32681 FIXED - upgraded from 2.25.1
-requests==2.31.0
+# CVE-2023-32681, CVE-2024-35195, CVE-2024-47081, CVE-2026-25645 FIXED
+requests==2.34.2
 
 # CVE-2020-14343 FIXED - upgraded from 5.3.1
 pyyaml==6.0.1
@@ -21,11 +21,11 @@ py==1.11.0
 # CVE-2021-41496 FIXED - upgraded from 1.19.4
 numpy==1.26.3
 
-# CVE-2023-37920 FIXED - upgraded from 2022.12.7
-certifi==2024.2.2
+# CVE-2023-37920, CVE-2024-39689 FIXED - upgraded from 2022.12.7
+certifi==2026.7.22
 
-# CVE-2024-6345, CVE-2025-47273 FIXED - upgraded from 69.0.3
-setuptools==78.1.1
+# CVE-2024-6345, CVE-2025-47273, CVE-2026-59890 FIXED - upgraded from 69.0.3
+setuptools==83.0.0
 
 # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441, CVE-2026-44431 FIXED
 urllib3==2.7.0
@@ -43,5 +43,5 @@ passlib[bcrypt]==1.7.4
 # CVE-2024-24762, CVE-2024-53981, CVE-2026-24486, CVE-2026-42561, CVE-2026-53539, CVE-2026-40347 FIXED
 python-multipart==0.0.32
 
-# Pinned pip for reproducibility
-pip==24.0
+# CVE-2025-8869, CVE-2026-1703, CVE-2026-3219, CVE-2026-6357, CVE-2026-8643 FIXED
+pip==26.1.2
