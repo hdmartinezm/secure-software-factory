@@ -342,9 +342,27 @@ jobs:
       - name: Generate Terraform Plan JSON
         working-directory: ${{ env.SCENARIO }}/infra
         run: |
-          terraform plan -out=tfplan -input=false 2>/dev/null || true
-          terraform show -json tfplan > tfplan.json 2>/dev/null || echo '{}' > tfplan.json
-        continue-on-error: true
+          # Generate Terraform plan
+          # Note: In CI without AWS credentials, plan will fail - this is expected for public repo demos
+          # Checkov still validates HCL directly; OPA/Conftest requires a valid plan
+          PLAN_SUCCESS=false
+          if terraform plan -out=tfplan -input=false 2>/dev/null; then
+            PLAN_SUCCESS=true
+            terraform show -json tfplan > tfplan.json 2>/dev/null
+          else
+            echo "::warning::Terraform plan failed (likely no AWS credentials in CI)"
+            echo "::notice::OPA policies require a valid plan - Checkov HCL analysis still applies"
+            echo '{}' > tfplan.json
+          fi
+
+          # Validate the JSON and inform about OPA coverage
+          if jq -e '.format_version' tfplan.json >/dev/null 2>&1; then
+            echo "✅ Valid Terraform plan JSON (format_version: $(jq -r '.format_version' tfplan.json))"
+            echo "✅ OPA policies will analyze planned resources"
+          else
+            echo "::notice::Empty plan JSON - OPA policies will not detect plan-based violations"
+            echo "::notice::Checkov HCL analysis provides static coverage for IaC security"
+          fi
 
       - name: Run Conftest (EFEX Custom Policies)
         run: |
