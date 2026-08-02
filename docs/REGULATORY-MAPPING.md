@@ -180,7 +180,7 @@ Attestations: SBOM as in-toto predicate
 | Requirement | Pipeline Control | Evidence |
 |-------------|------------------|----------|
 | Identificación de activos | SBOM generation | sbom.spdx.json |
-| Clasificación de información | Terraform tags | infra/main.tf (DataClass tags) |
+| Clasificación de información | Terraform tags | remediated/infra/main.tf (DataClass tags) |
 | Control de acceso | IAM policies scan | Checkov CKV_AWS_1 |
 | Gestión de secretos | gitleaks | gitleaks.sarif |
 | Registro de eventos | VPC flow logs, CloudTrail | OPA EFEX-TF-NET-005 |
@@ -194,7 +194,7 @@ Attestations: SBOM as in-toto predicate
 | Cifrado en reposo (S3) | Checkov CKV_AWS_19 | checkov-results.sarif |
 | Cifrado en reposo (RDS) | Checkov CKV_AWS_16 | checkov-results.sarif |
 | Cifrado en reposo (Logs) | OPA policy | EFEX-TF-DB-* |
-| KMS key management | Terraform validation | infra/main.tf |
+| KMS key management | Terraform validation | remediated/infra/main.tf |
 | Cifrado en tránsito | HTTPS enforcement | Security group rules |
 
 ### 3.3 Artículo 316 Bis 18 - Control de Acceso
@@ -207,7 +207,7 @@ Attestations: SBOM as in-toto predicate
 | Prohibir IAM Resource:* | OPA EFEX-TF-IAM-002 | conftest-results.json |
 | Trust policies restrictivas | OPA EFEX-TF-IAM-004 | conftest-results.json |
 | Contenedores non-root | Trivy DS002 | trivy-container.sarif |
-| Segregación de ambientes | Terraform workspace | infra/providers.tf |
+| Segregación de ambientes | Terraform workspace | remediated/infra/providers.tf |
 
 ### 3.4 Artículo 316 Bis 19 - Gestión de Vulnerabilidades
 

@@ -57,7 +57,7 @@ Repository
 1. Policy definition: `.gitleaks.toml`
 2. Scan results: `evidence/*/gitleaks.sarif`
 3. Pipeline enforcement: `.github/workflows/security-pipeline.yml` (secrets-scan job)
-4. Remediation pattern: Compare `vulnerable-app/main.py` vs `remediated/vulnerable-app/main.py`
+4. Remediation pattern: Compare `vulnerable/app/main.py` vs `remediated/vulnerable/app/main.py`
 
 **Sample Evidence:**
 ```json
@@ -70,7 +70,7 @@ Repository
   },
   "locations": [{
     "physicalLocation": {
-      "artifactLocation": { "uri": "vulnerable-app/main.py" },
+      "artifactLocation": { "uri": "vulnerable/app/main.py" },
       "region": { "startLine": 34 }
     }
   }]
@@ -126,7 +126,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "kyc_encryption" {
    - `policy/terraform/iam.rego` (EFEX-TF-IAM-001 through 005)
    - `policy/checkov/efex_iam_least_privilege.py`
 2. Scan results: `evidence/*/checkov-results.sarif`, `conftest-results.json`
-3. IAM configuration: Compare `infra/main.tf` vs `remediated/infra/main.tf`
+3. IAM configuration: Compare `vulnerable/infra/main.tf` vs `remediated/infra/main.tf`
 
 **Sample Evidence:**
 ```rego
@@ -256,7 +256,7 @@ deny[msg] {
         "message": { "text": "SQL injection vulnerability detected" },
         "locations": [{
           "physicalLocation": {
-            "artifactLocation": { "uri": "vulnerable-app/main.py" },
+            "artifactLocation": { "uri": "vulnerable/app/main.py" },
             "region": { "startLine": 67, "startColumn": 5 }
           }
         }]

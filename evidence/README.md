@@ -48,10 +48,10 @@ evidence/
 **Findings:**
 | Secret Type | File | Line | Rule ID |
 |-------------|------|------|---------|
-| Stripe API Key | vulnerable-app/main.py | 32 | stripe-api-key |
-| AWS Secret Key | vulnerable-app/main.py | 33 | aws-secret-access-key |
-| SPEI Token | vulnerable-app/main.py | 34 | efex-spei-token |
-| Database Password | vulnerable-app/main.py | 30 | generic-password |
+| Stripe API Key | vulnerable/app/main.py | 32 | stripe-api-key |
+| AWS Secret Key | vulnerable/app/main.py | 33 | aws-secret-access-key |
+| SPEI Token | vulnerable/app/main.py | 34 | efex-spei-token |
+| Database Password | vulnerable/app/main.py | 30 | generic-password |
 
 **Exit Code:** 1 (BUILD BLOCKED)
 
@@ -178,13 +178,13 @@ cd secure-software-factory
 gitleaks detect --source . --verbose
 
 # SAST
-semgrep scan --config auto --config .semgrep/ vulnerable-app/
+semgrep scan --config auto --config .semgrep/ vulnerable/app/
 
 # SCA
 trivy fs --severity HIGH,CRITICAL .
 
 # IaC
-checkov -d infra/ --framework terraform
+checkov -d vulnerable/infra/ --framework terraform
 
 # Container
 docker build -t efex-app:test .
