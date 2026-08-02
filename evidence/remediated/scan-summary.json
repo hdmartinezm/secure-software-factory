@@ -1,7 +1,50 @@
 {
-  "timestamp": "2026-08-02T01:03:38Z",
+  "timestamp": "2026-08-02T04:57:53Z",
   "scenario": "remediated",
+  "branch": "main",
+  "commit": "3f0026571451b335dce498e143790082665ce66a",
+  "run_id": 30733265681,
   "total_checks": 5,
   "failed_checks": 0,
-  "failed": []
+  "passed_checks": 5,
+  "failed": [],
+  "passed": ["secrets", "sast", "sca", "iac", "container"],
+  "supply_chain": {
+    "sbom_spdx": true,
+    "sbom_cyclonedx": true,
+    "image_signed": true,
+    "attestation": true
+  },
+  "details": {
+    "secrets": {
+      "tool": "Gitleaks",
+      "status": "PASSED",
+      "findings": 0,
+      "reason": "No hardcoded secrets"
+    },
+    "sast": {
+      "tool": "Semgrep",
+      "status": "PASSED",
+      "findings": 0,
+      "reason": "No injection vulnerabilities"
+    },
+    "sca": {
+      "tool": "Trivy",
+      "status": "PASSED",
+      "findings": 0,
+      "reason": "All dependencies updated/baselined"
+    },
+    "iac": {
+      "tool": "Checkov + Conftest",
+      "status": "PASSED",
+      "findings": 0,
+      "reason": "Infrastructure compliant with EFEX policies"
+    },
+    "container": {
+      "tool": "Hadolint + Trivy",
+      "status": "PASSED",
+      "findings": 0,
+      "reason": "Non-root user, hardened base image"
+    }
+  }
 }

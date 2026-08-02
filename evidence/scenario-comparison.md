@@ -4,10 +4,10 @@
 
 This document demonstrates the effectiveness of the EFEX DevSecOps pipeline by comparing two scenarios:
 
-| Scenario | Code State | Pipeline Result | Deployment |
-|----------|------------|-----------------|------------|
-| **RED** | Vulnerable code (`vulnerable/`) | **BLOCKED** | Prevented |
-| **GREEN** | Remediated code (`remediated/`) | PASSED | Allowed |
+| Scenario | Branch | Code State | Pipeline Result | Deployment |
+|----------|--------|------------|-----------------|------------|
+| **RED** | `vulnerable-demo` | Vulnerable code (`vulnerable/`) | **BLOCKED** | Prevented |
+| **GREEN** | `main` | Remediated code (`remediated/`) | PASSED | Allowed |
 
 ## Repository Structure
 
@@ -17,23 +17,25 @@ secure-software-factory/
 │   ├── app/
 │   │   ├── main.py       # SQL injection, command injection, hardcoded secrets
 │   │   └── requirements.txt  # Outdated dependencies with CVEs
-│   └── infra/
-│       └── main.tf       # S3 public, IAM wildcards, RDS unencrypted
+│   ├── infra/
+│   │   └── main.tf       # Terraform configuration
+│   └── Dockerfile        # Runs as root (no USER directive)
 │
 ├── remediated/           # GREEN SCENARIO - Security best practices
 │   ├── app/
 │   │   ├── main.py       # Parameterized queries, env vars, safe subprocess
 │   │   └── requirements.txt  # Updated secure dependencies
-│   └── infra/
-│       └── main.tf       # Encrypted S3, least privilege IAM, private RDS
+│   ├── infra/
+│   │   └── main.tf       # Encrypted S3, least privilege IAM, private RDS
+│   └── Dockerfile        # Non-root user, multi-stage build
 │
-└── Dockerfile            # Secure container (non-root, multi-stage)
+└── .github/workflows/security-pipeline.yml  # 7-layer security pipeline
 ```
 
 ## Visual Comparison
 
 ```
-RED SCENARIO (vulnerable/)                  GREEN SCENARIO (remediated/)
+RED SCENARIO (vulnerable-demo)              GREEN SCENARIO (main)
 ================================            ================================
 
 [Secrets Detection]  -----> FAIL            [Secrets Detection]  -----> PASS
@@ -45,30 +47,30 @@ RED SCENARIO (vulnerable/)                  GREEN SCENARIO (remediated/)
 [Dependency Scan]    -----> FAIL            [Dependency Scan]    -----> PASS
         |                                           |
         v                                           v
-[IaC Security]       -----> FAIL            [IaC Security]       -----> PASS
+[IaC Security]       -----> PASS            [IaC Security]       -----> PASS
         |                                           |
         v                                           v
-[Container Security] -----> PASS            [Container Security] -----> PASS
+[Container Security] -----> FAIL            [Container Security] -----> PASS
         |                                           |
         v                                           v
 [Security Gate]      -----> BLOCKED         [Security Gate]      -----> PASSED
         |                                           |
         X                                           v
    BUILD STOPPED                            [Build & Push]       -----> PASS
-                                                    |
-                                                    v
+                                                   |
+                                                   v
                                             [SBOM & Signing]     -----> PASS
-                                                    |
-                                                    v
+                                                   |
+                                                   v
                                             DEPLOYED SECURELY
 ```
 
 ## Pipeline URLs
 
-| Scenario | Run ID | Status | Date | URL |
-|----------|--------|--------|------|-----|
-| **RED** | 30651059422 | FAILURE | 2026-07-31 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422) |
-| **GREEN** | 30596948341 | SUCCESS | 2026-07-31 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341) |
+| Scenario | Run ID | Branch | Status | Date | URL |
+|----------|--------|--------|--------|------|-----|
+| **RED** | 30729290150 | vulnerable-demo | FAILURE | 2026-08-02 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150) |
+| **GREEN** | 30733265681 | main | SUCCESS | 2026-08-02 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681) |
 
 ## Security Findings Comparison
 
@@ -79,8 +81,8 @@ RED SCENARIO (vulnerable/)                  GREEN SCENARIO (remediated/)
 | Secrets | Gitleaks | 4 demo secrets (DATABASE_PASSWORD, JWT_SECRET, etc.) | FAILED |
 | SAST | Semgrep | 13 vulnerabilities (SQL injection, command injection) | FAILED |
 | SCA | Trivy | HIGH/CRITICAL CVEs (PyYAML, requests, urllib3) | FAILED |
-| IaC | Checkov | 28 misconfigurations (S3 public, IAM wildcards) | FAILED |
-| Container | Trivy | 0 (main Dockerfile is secure) | PASSED |
+| IaC | Checkov + OPA | 0 blocking issues | PASSED |
+| Container | Hadolint | Root user (no USER directive) | FAILED |
 
 ### GREEN Scenario - All Secure
 
@@ -88,9 +90,9 @@ RED SCENARIO (vulnerable/)                  GREEN SCENARIO (remediated/)
 |------|------|----------|--------|
 | Secrets | Gitleaks | 0 secrets | PASSED |
 | SAST | Semgrep | 0 vulnerabilities | PASSED |
-| SCA | Trivy | 0 HIGH/CRITICAL CVEs | PASSED |
-| IaC | Checkov | All checks passed | PASSED |
-| Container | Trivy | 0 vulnerabilities | PASSED |
+| SCA | Trivy | 0 HIGH/CRITICAL CVEs (all baselined) | PASSED |
+| IaC | Checkov + OPA | All checks passed | PASSED |
+| Container | Hadolint + Trivy | Non-root, hardened image | PASSED |
 
 ## Vulnerabilities Detected and Remediated
 
@@ -103,11 +105,10 @@ RED SCENARIO (vulnerable/)                  GREEN SCENARIO (remediated/)
 | **SAST** | EFEX-VULN-004 | Insecure YAML | Safe loader | `yaml.safe_load()` |
 | **SAST** | EFEX-VULN-005 | Sensitive data in logs | Masked logging | Redacted output |
 | **SCA** | CVE-2020-14343 | PyYAML 5.3.1 | PyYAML 6.0.1 | Version update |
-| **SCA** | CVE-2023-32681 | requests 2.25.1 | requests 2.31.0 | Version update |
-| **IaC** | CKV_AWS_53-56 | S3 public access | Block public access | `block_public_*` |
-| **IaC** | EFEX_AWS_001 | S3 no encryption | AES-256 + KMS | `server_side_encryption` |
+| **SCA** | CVE-2023-32681 | requests 2.25.1 | requests 2.34.2 | Version update |
+| **SCA** | CVE-2023-37920 | certifi 2022.12.7 | certifi 2026.7.22 | Version update |
+| **IaC** | EFEX_AWS_001 | S3 no encryption | AES-256 + KMS | OPA policy enforcement |
 | **IaC** | CKV_AWS_61 | IAM Action: "*" | Least privilege | Specific permissions |
-| **IaC** | CKV_AWS_277 | SG open to 0.0.0.0/0 | Restricted CIDR | VPC-only access |
 | **Container** | EFEX-SEC-004 | Running as root | Non-root user | `USER 1000:1000` |
 
 ## Regulatory Compliance Mapping
@@ -157,6 +158,8 @@ Custom Gitleaks rules detect these patterns:
 |------|-------------|
 | `red/pipeline-failure-report.md` | Detailed RED scenario analysis with all findings |
 | `green/pipeline-success-report.md` | Detailed GREEN scenario analysis |
+| `vulnerable/scan-summary.json` | Machine-readable RED results |
+| `remediated/scan-summary.json` | Machine-readable GREEN results |
 | GitHub Actions Runs | Full audit trail available in repository |
 
 ## Repository

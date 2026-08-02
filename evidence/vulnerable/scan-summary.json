@@ -1,7 +1,44 @@
 {
-  "timestamp": "2026-08-02T01:06:03Z",
+  "timestamp": "2026-08-02T02:41:03Z",
   "scenario": "vulnerable",
+  "branch": "vulnerable-demo",
+  "commit": "ffd274c49bf6f7433842c5f7c0478fd840c1dfe8",
+  "run_id": 30729290150,
   "total_checks": 5,
-  "failed_checks": 3,
-  "failed": ["secrets","sast","container"]
+  "failed_checks": 4,
+  "passed_checks": 1,
+  "failed": ["secrets", "sast", "sca", "container"],
+  "passed": ["iac"],
+  "details": {
+    "secrets": {
+      "tool": "Gitleaks",
+      "status": "FAILED",
+      "findings": 4,
+      "reason": "Hardcoded secrets detected in vulnerable/app/main.py"
+    },
+    "sast": {
+      "tool": "Semgrep",
+      "status": "FAILED",
+      "findings": 13,
+      "reason": "SQL injection, command injection, insecure deserialization"
+    },
+    "sca": {
+      "tool": "Trivy",
+      "status": "FAILED",
+      "findings": "HIGH/CRITICAL CVEs",
+      "reason": "Outdated dependencies with known vulnerabilities"
+    },
+    "iac": {
+      "tool": "Checkov + Conftest",
+      "status": "PASSED",
+      "findings": 0,
+      "reason": "No blocking misconfigurations found"
+    },
+    "container": {
+      "tool": "Hadolint + Trivy",
+      "status": "FAILED",
+      "findings": 1,
+      "reason": "Dockerfile runs as root (no USER directive)"
+    }
+  }
 }

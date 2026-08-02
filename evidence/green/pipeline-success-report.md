@@ -4,24 +4,25 @@
 
 | Field | Value |
 |-------|-------|
-| **Run ID** | 30596948341 |
+| **Run ID** | 30733265681 |
 | **Conclusion** | SUCCESS |
-| **Date** | 2026-07-31T01:40:15Z |
-| **Branch** | feature/remediated-code (PR #1) |
-| **URL** | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341 |
+| **Date** | 2026-08-02T04:57:53Z |
+| **Branch** | main |
+| **Commit** | `3f00265` - fix(pipelines): Update alternative pipelines to use scenario variables |
+| **URL** | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681 |
 
 ## Security Checks Results
 
 | Check | Status | Duration | Details |
 |-------|--------|----------|---------|
-| 🔐 Secrets Detection | PASSED | 19s | No hardcoded secrets |
-| 🔍 SAST Analysis | PASSED | 20s | No injection vulnerabilities |
-| 📦 Dependency Scan (SCA) | PASSED | 26s | Dependencies updated/secured |
-| 🏗️ IaC Security Scan | PASSED | 38s | Infrastructure compliant |
-| 🐳 Container Security | PASSED | 1m7s | Non-root user, hardened |
+| 🔐 Secrets Detection | PASSED | 13s | No hardcoded secrets |
+| 🔍 SAST Analysis | PASSED | 41s | No injection vulnerabilities |
+| 📦 Dependency Scan (SCA) | PASSED | 20s | Dependencies updated/baselined |
+| 🏗️ IaC Security Scan | PASSED | 44s | Infrastructure compliant |
+| 🐳 Container Security | PASSED | 1m16s | Non-root user, hardened |
 | 🚦 Security Gate | PASSED | 4s | All checks passed |
-| 📋 SBOM & Signing | PASSED | 1m9s | SBOM generated, image signed |
-| 📊 Pipeline Status | PASSED | 5s | Full pipeline success |
+| 📋 SBOM & Signing | PASSED | 1m22s | SBOM generated, image signed |
+| 📊 Pipeline Status | PASSED | 2s | Full pipeline success |
 
 ## Remediations Applied
 
@@ -38,10 +39,13 @@
 - Removed sensitive data from logs
 
 ### 3. Dependencies (SCA)
-- Updated `requests` to secure version
-- Updated `pyyaml` to patched version
-- Updated all dependencies with known CVEs
-- Pinned dependency versions
+- Updated `requests` to 2.34.2
+- Updated `pyyaml` to 6.0.1
+- Updated `certifi` to 2026.7.22
+- Updated `urllib3` to 2.7.0
+- Updated `fastapi` to 0.136.1
+- Added `.trivyignore` for baselined transitive CVEs
+- Pinned all dependency versions
 
 ### 4. Infrastructure (IaC)
 - Added S3 encryption (AES-256 + KMS)
@@ -49,10 +53,11 @@
 - Restricted IAM policies to least privilege
 - Added VPC flow logs
 - Enabled RDS encryption
+- Custom OPA policies (EFEX_AWS_001-011)
 
 ### 5. Container Security
 - Added `USER 1000:1000` directive
-- Pinned base image with tag
+- Pinned base image `python:3.11-slim-bookworm`
 - Added `HEALTHCHECK` instruction
 - Removed unnecessary packages
 - Used multi-stage build
@@ -63,18 +68,20 @@
 |----------|--------|
 | SBOM (SPDX) | Generated |
 | SBOM (CycloneDX) | Generated |
-| Container Signature | Signed with Sigstore |
+| Container Signature | Signed with Sigstore (keyless) |
 | Attestation | Created |
 
 ## Job URLs
 
-- Secrets: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051285088
-- SAST: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051285066
-- SCA: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051285108
-- IaC: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051285027
-- Container: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051285057
-- Security Gate: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051450137
-- SBOM & Signing: https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341/job/91051481477
+| Job | Status | URL |
+|-----|--------|-----|
+| Secrets Detection | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457182324 |
+| SAST Analysis | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457182330 |
+| Dependency Scan | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457182325 |
+| IaC Security | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457182312 |
+| Container Security | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457182318 |
+| Security Gate | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457282875 |
+| SBOM & Signing | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681/job/91457291272 |
 
 ## Conclusion
 
@@ -82,7 +89,19 @@ After applying security remediations, the pipeline **PASSED** all checks:
 
 1. **All 7 Security Layers** - Validated and passed
 2. **Security Gate** - Approved for deployment
-3. **Supply Chain** - SBOM generated, artifacts signed
+3. **Supply Chain** - SBOM generated, artifacts signed with Sigstore
 4. **Compliance** - CNBV/SOC2 controls satisfied
 
 This demonstrates the complete DevSecOps workflow: **Detect -> Block -> Remediate -> Deploy**
+
+### Security Gates Summary
+
+| Gate | Tool | Status | Evidence |
+|------|------|--------|----------|
+| Secrets | Gitleaks | PASSED | No findings |
+| SAST | Semgrep | PASSED | No vulnerabilities |
+| SCA | Trivy | PASSED | All CVEs remediated/baselined |
+| IaC | Checkov + OPA | PASSED | Compliant infrastructure |
+| Container | Hadolint + Trivy | PASSED | Non-root, hardened image |
+
+**Total: 5/5 gates passed = Pipeline SUCCESS + SBOM + Signed Image**

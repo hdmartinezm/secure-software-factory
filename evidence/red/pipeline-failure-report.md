@@ -4,22 +4,22 @@
 
 | Field | Value |
 |-------|-------|
-| **Run ID** | 30651059422 |
+| **Run ID** | 30729290150 |
 | **Conclusion** | FAILURE |
-| **Date** | 2026-07-31T17:24:45Z |
-| **Branch** | main |
-| **Commit** | `c862b4e` - fix(security): Adjust Gitleaks and Semgrep to detect demo secrets |
-| **URL** | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422 |
+| **Date** | 2026-08-02T02:41:03Z |
+| **Branch** | vulnerable-demo |
+| **Commit** | `ffd274c` - fix(pipeline): Allow vars.SECURITY_GATE_MODE to take precedence |
+| **URL** | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150 |
 
 ## Security Checks Results
 
 | Check | Status | Findings | Failure Reason |
 |-------|--------|----------|----------------|
-| 🔐 Secrets Detection | **FAILED** | 4 secrets | Demo secrets detected by Gitleaks |
+| 🔐 Secrets Detection | **FAILED** | 4 secrets | Hardcoded secrets in vulnerable/app/main.py |
 | 🔍 SAST Analysis | **FAILED** | 13 vulns | SQL/Command injection, insecure deserialization |
 | 📦 Dependency Scan (SCA) | **FAILED** | HIGH/CRITICAL CVEs | Vulnerable dependencies in requirements.txt |
-| 🏗️ IaC Security Scan | **FAILED** | 28 issues | S3 public, IAM wildcards, RDS unencrypted |
-| 🐳 Container Security | PASSED | 0 | Main Dockerfile is secure |
+| 🏗️ IaC Security Scan | PASSED | 0 issues | Infrastructure compliant |
+| 🐳 Container Security | **FAILED** | 1 issue | Dockerfile runs as root (no USER directive) |
 | 🚦 Security Gate | **FAILED** | - | Upstream checks failed |
 | 📋 SBOM & Signing | SKIPPED | - | Security gate blocked |
 
@@ -72,32 +72,23 @@ Vulnerabilities detected:
 - `p/sql-injection` - SQL injection detection
 - `.semgrep/` - Custom EFEX rules
 
-### 3. IaC Security (Checkov) - 28 Failed Checks
-
-```
-Passed checks: 19, Failed checks: 28, Skipped checks: 0
-
-Critical Findings:
-- CKV_AWS_41: Hard coded AWS access key in provider
-- CKV_AWS_61: IAM policy allows assume role across all services
-- CKV_AWS_60: IAM role allows any principal to assume it
-- CKV_AWS_274: AdministratorAccess policy attached
-- CKV_AWS_25: Security group allows 0.0.0.0/0 to port 3389
-- CKV_AWS_277: Security group allows 0.0.0.0/0 to all ports
-- CKV_AWS_93: S3 bucket policy lockout risk
-- CKV_AWS_133: RDS instance missing backup policy
-- CKV_AWS_354: RDS Performance Insights not encrypted with KMS
-- CKV2_AWS_56: IAMFullAccess policy used
-- CKV2_AWS_69: RDS not configured with encryption in transit
-```
-
-### 4. Dependency Scan (Trivy/SCA) - Vulnerable Dependencies
+### 3. Dependency Scan (Trivy/SCA) - Vulnerable Dependencies
 
 ```
 vulnerable/app/requirements.txt contains:
 - PyYAML==5.3.1 (CVE-2020-14343 - CRITICAL)
 - requests==2.25.1 (CVE-2023-32681 - HIGH)
 - urllib3==1.26.5 (Multiple CVEs)
+- certifi==2022.12.7 (CVE-2023-37920 - HIGH)
+```
+
+### 4. Container Security - Root User
+
+```
+vulnerable/Dockerfile analysis:
+- No USER directive found
+- Container runs as root by default
+- EFEX-SEC-004: Dockerfile must specify non-root USER
 ```
 
 ### 5. Security Gate
@@ -110,26 +101,27 @@ Failed checks:
 - secrets-scan: FAILED
 - sast: FAILED
 - sca: FAILED
-- iac-scan: FAILED
+- container: FAILED
 ```
 
 ## Job URLs
 
 | Job | Status | URL |
 |-----|--------|-----|
-| Secrets Detection | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422/job/91224124644 |
-| SAST Analysis | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422/job/91224124650 |
-| Dependency Scan | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422/job/91224124515 |
-| IaC Security | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422/job/91224124748 |
-| Container Security | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422/job/91224124568 |
-| Security Gate | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422/job/91224731906 |
+| Secrets Detection | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548463 |
+| SAST Analysis | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548468 |
+| Dependency Scan | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548461 |
+| IaC Security | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548475 |
+| Container Security | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548462 |
+| Security Gate | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446597071 |
 
 ## Vulnerable Code Scanned
 
 The pipeline scanned the intentionally vulnerable code in:
 - `vulnerable/app/main.py` - Python API with security flaws
 - `vulnerable/app/requirements.txt` - Outdated dependencies with CVEs
-- `vulnerable/infra/main.tf` - Insecure Terraform configuration
+- `vulnerable/Dockerfile` - Container running as root
+- `vulnerable/infra/main.tf` - Terraform configuration
 
 ## Conclusion
 
@@ -138,8 +130,8 @@ The pipeline correctly **BLOCKED** the vulnerable code from being deployed. This
 1. **Defense in Depth** - 4 of 5 security layers caught different vulnerabilities
 2. **Fail-Fast** - Pipeline stopped at Security Gate, preventing build/deploy
 3. **Custom Policy Enforcement** - EFEX-specific Gitleaks and Semgrep rules triggered
-4. **Compliance Controls** - CNBV/SOC2 requirements enforced via Checkov policies
-5. **Comprehensive Coverage** - Secrets, SAST, SCA, and IaC all validated
+4. **Container Hardening** - Root user detection blocked deployment
+5. **SCA Coverage** - Vulnerable dependencies detected with CVE details
 
 ### Security Gates Summary
 
@@ -148,7 +140,7 @@ The pipeline correctly **BLOCKED** the vulnerable code from being deployed. This
 | Secrets | Gitleaks | 4 demo secrets | YES |
 | SAST | Semgrep | 13 vulnerabilities | YES |
 | SCA | Trivy | HIGH/CRITICAL CVEs | YES |
-| IaC | Checkov | 28 misconfigurations | YES |
-| Container | Trivy | 0 (secure Dockerfile) | NO |
+| IaC | Checkov | 0 issues | NO |
+| Container | Hadolint/Trivy | Root user | YES |
 
 **Total: 4/5 gates failed = Pipeline BLOCKED**
