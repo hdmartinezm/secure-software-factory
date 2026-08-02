@@ -34,12 +34,13 @@ CVE-2026-59886
 # Reference: GHSA-58pv-8j8x-9vj2
 CVE-2026-23949
 
-# Base image (python:3.11-slim-bookworm) pip and setuptools
+# Base image (python:3.11-slim-bookworm) pip, setuptools, and wheel
 # These are in the system Python, not in our virtualenv
-# Our app uses pip==26.1.2 and setuptools==83.0.0 in /opt/venv
+# Our app uses pip==26.1.2, setuptools==83.0.0, wheel>=0.46.2 in /opt/venv
 CVE-2025-8869
 CVE-2026-1703
 CVE-2026-3219
 CVE-2026-6357
 CVE-2026-8643
 CVE-2026-59890
+CVE-2026-24049
