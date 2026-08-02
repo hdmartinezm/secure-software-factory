@@ -27,8 +27,8 @@ This repository demonstrates a **Secure Software Factory** for EFEX, a fintech p
 
 | Scenario | Run ID | Status | Security Gates | Link |
 |----------|--------|--------|----------------|------|
-| **RED** | 30651059422 | FAILURE | 4/5 failed | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30651059422) |
-| **GREEN** | 30596948341 | SUCCESS | 5/5 passed | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30596948341) |
+| **RED** | 30771471219 | FAILURE | 5/5 failed | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219) |
+| **GREEN** | 30771628476 | SUCCESS | 5/5 passed | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771628476) |
 
 ### RED Scenario Findings
 
@@ -37,8 +37,8 @@ This repository demonstrates a **Secure Software Factory** for EFEX, a fintech p
 | Secrets Detection | Gitleaks | 4 demo secrets | FAILED |
 | SAST Analysis | Semgrep | 13 vulnerabilities | FAILED |
 | Dependency Scan (SCA) | Trivy | HIGH/CRITICAL CVEs | FAILED |
-| IaC Security | Checkov | 28 misconfigurations | FAILED |
-| Container Security | Trivy | 0 (secure Dockerfile) | PASSED |
+| IaC Security | Checkov | Policy violations | FAILED |
+| Container Security | Hadolint | Root user (no USER) | FAILED |
 
 ## Red/Green Comparison
 

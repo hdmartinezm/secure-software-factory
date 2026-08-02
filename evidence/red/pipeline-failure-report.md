@@ -4,12 +4,12 @@
 
 | Field | Value |
 |-------|-------|
-| **Run ID** | 30729290150 |
+| **Run ID** | 30771471219 |
 | **Conclusion** | FAILURE |
 | **Date** | 2026-08-02T02:41:03Z |
 | **Branch** | vulnerable-demo |
-| **Commit** | `ffd274c` - fix(pipeline): Allow vars.SECURITY_GATE_MODE to take precedence |
-| **URL** | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150 |
+| **Commit** | `63a5882` |
+| **URL** | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219 |
 
 ## Security Checks Results
 
@@ -18,7 +18,7 @@
 | 🔐 Secrets Detection | **FAILED** | 4 secrets | Hardcoded secrets in vulnerable/app/main.py |
 | 🔍 SAST Analysis | **FAILED** | 13 vulns | SQL/Command injection, insecure deserialization |
 | 📦 Dependency Scan (SCA) | **FAILED** | HIGH/CRITICAL CVEs | Vulnerable dependencies in requirements.txt |
-| 🏗️ IaC Security Scan | PASSED | 0 issues | Infrastructure compliant |
+| 🏗️ IaC Security Scan | **FAILED** | 7 violations | S3 public, IAM wildcards, RDS public, SG open |
 | 🐳 Container Security | **FAILED** | 1 issue | Dockerfile runs as root (no USER directive) |
 | 🚦 Security Gate | **FAILED** | - | Upstream checks failed |
 | 📋 SBOM & Signing | SKIPPED | - | Security gate blocked |
@@ -91,7 +91,20 @@ vulnerable/Dockerfile analysis:
 - EFEX-SEC-004: Dockerfile must specify non-root USER
 ```
 
-### 5. Security Gate
+### 5. IaC Security (Checkov) - 7 Violations
+
+```
+vulnerable/infra/main.tf analysis:
+- EFEX-VULN-013: S3 bucket without encryption
+- EFEX-VULN-014: S3 public access enabled (block_public_acls=false)
+- EFEX-VULN-015: IAM policy with Action: "*" (overly permissive)
+- EFEX-VULN-016: IAM policy with Resource: "*" (no least privilege)
+- EFEX-VULN-017: Security Group open to 0.0.0.0/0 (SSH, API, PostgreSQL)
+- EFEX-VULN-018: RDS without encryption at rest
+- EFEX-VULN-019: RDS publicly accessible
+```
+
+### 6. Security Gate
 
 ```
 🚦 Security Gate: FAILED
@@ -101,6 +114,7 @@ Failed checks:
 - secrets-scan: FAILED
 - sast: FAILED
 - sca: FAILED
+- iac: FAILED
 - container: FAILED
 ```
 
@@ -108,12 +122,12 @@ Failed checks:
 
 | Job | Status | URL |
 |-----|--------|-----|
-| Secrets Detection | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548463 |
-| SAST Analysis | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548468 |
-| Dependency Scan | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548461 |
-| IaC Security | PASSED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548475 |
-| Container Security | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446548462 |
-| Security Gate | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150/job/91446597071 |
+| Secrets Detection | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219/job/91446548463 |
+| SAST Analysis | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219/job/91446548468 |
+| Dependency Scan | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219/job/91446548461 |
+| IaC Security | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219/job/91580896784 |
+| Container Security | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219/job/91446548462 |
+| Security Gate | FAILED | https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219/job/91446597071 |
 
 ## Vulnerable Code Scanned
 
@@ -127,7 +141,7 @@ The pipeline scanned the intentionally vulnerable code in:
 
 The pipeline correctly **BLOCKED** the vulnerable code from being deployed. This demonstrates:
 
-1. **Defense in Depth** - 4 of 5 security layers caught different vulnerabilities
+1. **Defense in Depth** - All 5 security layers caught different vulnerabilities
 2. **Fail-Fast** - Pipeline stopped at Security Gate, preventing build/deploy
 3. **Custom Policy Enforcement** - EFEX-specific Gitleaks and Semgrep rules triggered
 4. **Container Hardening** - Root user detection blocked deployment
@@ -140,7 +154,7 @@ The pipeline correctly **BLOCKED** the vulnerable code from being deployed. This
 | Secrets | Gitleaks | 4 demo secrets | YES |
 | SAST | Semgrep | 13 vulnerabilities | YES |
 | SCA | Trivy | HIGH/CRITICAL CVEs | YES |
-| IaC | Checkov | 0 issues | NO |
+| IaC | Checkov | 7 violations | YES |
 | Container | Hadolint/Trivy | Root user | YES |
 
-**Total: 4/5 gates failed = Pipeline BLOCKED**
+**Total: 5/5 gates failed = Pipeline BLOCKED**

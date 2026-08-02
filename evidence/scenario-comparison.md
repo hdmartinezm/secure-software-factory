@@ -47,7 +47,7 @@ RED SCENARIO (vulnerable-demo)              GREEN SCENARIO (main)
 [Dependency Scan]    -----> FAIL            [Dependency Scan]    -----> PASS
         |                                           |
         v                                           v
-[IaC Security]       -----> PASS            [IaC Security]       -----> PASS
+[IaC Security]       -----> FAIL            [IaC Security]       -----> PASS
         |                                           |
         v                                           v
 [Container Security] -----> FAIL            [Container Security] -----> PASS
@@ -69,8 +69,8 @@ RED SCENARIO (vulnerable-demo)              GREEN SCENARIO (main)
 
 | Scenario | Run ID | Branch | Status | Date | URL |
 |----------|--------|--------|--------|------|-----|
-| **RED** | 30729290150 | vulnerable-demo | FAILURE | 2026-08-02 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30729290150) |
-| **GREEN** | 30733265681 | main | SUCCESS | 2026-08-02 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30733265681) |
+| **RED** | 30771471219 | vulnerable-demo | FAILURE | 2026-08-02 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219) |
+| **GREEN** | 30771628476 | main | SUCCESS | 2026-08-02 | [View Run](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771628476) |
 
 ## Security Findings Comparison
 
@@ -81,7 +81,7 @@ RED SCENARIO (vulnerable-demo)              GREEN SCENARIO (main)
 | Secrets | Gitleaks | 4 demo secrets (DATABASE_PASSWORD, JWT_SECRET, etc.) | FAILED |
 | SAST | Semgrep | 13 vulnerabilities (SQL injection, command injection) | FAILED |
 | SCA | Trivy | HIGH/CRITICAL CVEs (PyYAML, requests, urllib3) | FAILED |
-| IaC | Checkov + OPA | 0 blocking issues | PASSED |
+| IaC | Checkov + OPA | 7 violations (S3 public, IAM wildcards, RDS public) | FAILED |
 | Container | Hadolint | Root user (no USER directive) | FAILED |
 
 ### GREEN Scenario - All Secure
@@ -146,7 +146,7 @@ Custom Gitleaks rules detect these patterns:
 
 1. **Pipeline as Gatekeeper**: The security pipeline prevented vulnerable code from reaching production
 2. **Shift-Left Security**: Issues caught early in CI/CD, before deployment
-3. **Defense in Depth**: Multiple layers (4/5 gates) caught different vulnerability types
+3. **Defense in Depth**: All five security layers detected independent vulnerability classes
 4. **Custom Policy Enforcement**: EFEX-specific rules for Mexican fintech context
 5. **Developer Workflow**: Clear feedback loop with actionable remediation guidance
 6. **Supply Chain Security**: SBOM and signing ensure artifact integrity
