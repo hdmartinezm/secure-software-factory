@@ -1,0 +1,7 @@
+{
+  "timestamp": "2026-08-02T01:06:03Z",
+  "scenario": "vulnerable",
+  "total_checks": 5,
+  "failed_checks": 3,
+  "failed": ["secrets","sast","container"]
+}

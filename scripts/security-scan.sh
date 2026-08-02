@@ -304,12 +304,21 @@ echo ""
 log_header "Security Gate"
 
 REPORT_FILE="$EVIDENCE_DIR/scan-summary.json"
+
+# Handle empty array for JSON output
+if [ ${#FAILED_CHECKS[@]} -eq 0 ]; then
+    FAILED_JSON="[]"
+else
+    FAILED_JSON="[$(printf '"%s",' "${FAILED_CHECKS[@]}" | sed 's/,$//')]"
+fi
+
 cat > "$REPORT_FILE" << EOF
 {
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "scenario": "$SCENARIO",
   "total_checks": 5,
   "failed_checks": ${#FAILED_CHECKS[@]},
-  "failed": [$(printf '"%s",' "${FAILED_CHECKS[@]}" | sed 's/,$//')]
+  "failed": $FAILED_JSON
 }
 EOF
 
