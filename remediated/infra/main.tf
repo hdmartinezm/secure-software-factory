@@ -284,14 +284,22 @@ resource "aws_iam_role_policy" "flow_log_policy" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "FlowLogWrite"
         Effect = "Allow"
         Action = [
           "logs:CreateLogStream",
-          "logs:PutLogEvents",
+          "logs:PutLogEvents"
+        ]
+        Resource = "${aws_cloudwatch_log_group.flow_logs.arn}:*"
+      },
+      {
+        Sid    = "FlowLogDescribe"
+        Effect = "Allow"
+        Action = [
           "logs:DescribeLogGroups",
           "logs:DescribeLogStreams"
         ]
-        Resource = "*"
+        Resource = aws_cloudwatch_log_group.flow_logs.arn
       }
     ]
   })
@@ -454,10 +462,11 @@ resource "aws_db_instance" "transfers" {
   skip_final_snapshot       = false
   final_snapshot_identifier = "efex-transfers-final-${formatdate("YYYY-MM-DD", timestamp())}"
 
-  # SECURE: Monitoring enabled
-  performance_insights_enabled = true
-  monitoring_interval          = 60
-  monitoring_role_arn          = aws_iam_role.rds_monitoring.arn
+  # SECURE: Monitoring enabled with KMS encryption
+  performance_insights_enabled    = true
+  performance_insights_kms_key_id = aws_kms_key.efex_key.arn
+  monitoring_interval             = 60
+  monitoring_role_arn             = aws_iam_role.rds_monitoring.arn
 
   # Network
   db_subnet_group_name   = aws_db_subnet_group.main.name
