@@ -424,13 +424,14 @@ jobs:
           echo "**Dockerfile:** \`${DOCKERFILE_PATH}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Lint Dockerfile
+        # Hadolint blocks in enforce mode; advisory in observe/advise
         uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
         with:
           dockerfile: ${{ env.DOCKERFILE_PATH }}
           failure-threshold: error
           format: sarif
           output-file: hadolint.sarif
-        continue-on-error: true
+        continue-on-error: ${{ env.SECURITY_GATE_MODE != 'enforce' }}
 
       - name: Check for root user in Dockerfile
         run: |
