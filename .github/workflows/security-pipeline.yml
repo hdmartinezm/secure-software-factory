@@ -38,11 +38,12 @@ on:
         required: false
         default: 'false'
       security_gate_mode:
-        description: 'Security gate mode (observe/advise/enforce)'
+        description: 'Security gate mode (observe/advise/enforce). Leave empty to use repo variable.'
         required: false
-        default: 'enforce'
+        default: ''
         type: choice
         options:
+          - ''
           - observe
           - advise
           - enforce
