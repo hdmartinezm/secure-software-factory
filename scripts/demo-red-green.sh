@@ -220,7 +220,7 @@ run_red_scenario() {
 
         run_scan \
             "Trivy Container Scan" \
-            "trivy image --severity HIGH,CRITICAL --format sarif --output evidence/red/trivy-container.sarif efex-app:vulnerable" \
+            "trivy image --severity HIGH,CRITICAL --exit-code 1 --format sarif --output evidence/red/trivy-container.sarif efex-app:vulnerable" \
             "$evidence_dir/trivy-container-output.txt" \
             "true" || ((failed_count++))
     else
@@ -284,7 +284,7 @@ run_green_scenario() {
 
     run_scan \
         "Trivy SCA Scan" \
-        "trivy fs --severity HIGH,CRITICAL --exit-code 0 --format sarif --output evidence/green/trivy-sca.sarif remediated/app/" \
+        "trivy fs --severity HIGH,CRITICAL --exit-code 1 --format sarif --output evidence/green/trivy-sca.sarif remediated/app/" \
         "$evidence_dir/trivy-sca-output.txt" \
         "false" && ((passed_count++))
 
@@ -324,7 +324,7 @@ run_green_scenario() {
 
         run_scan \
             "Trivy Container Scan" \
-            "trivy image --severity HIGH,CRITICAL --exit-code 0 --format sarif --output evidence/green/trivy-container.sarif efex-app:remediated" \
+            "trivy image --severity HIGH,CRITICAL --exit-code 1 --format sarif --output evidence/green/trivy-container.sarif efex-app:remediated" \
             "$evidence_dir/trivy-container-output.txt" \
             "false" && ((passed_count++))
     else
