@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-08-02T02:41:03Z",
+  "timestamp": "2026-08-02T21:34:00Z",
   "scenario": "vulnerable",
   "branch": "vulnerable-demo",
-  "commit": "ffd274c49bf6f7433842c5f7c0478fd840c1dfe8",
-  "run_id": 30729290150,
+  "commit": "63a5882",
+  "run_id": 30771471219,
   "total_checks": 5,
-  "failed_checks": 4,
-  "passed_checks": 1,
-  "failed": ["secrets", "sast", "sca", "container"],
-  "passed": ["iac"],
+  "failed_checks": 5,
+  "passed_checks": 0,
+  "failed": ["secrets", "sast", "sca", "iac", "container"],
+  "passed": [],
   "details": {
     "secrets": {
       "tool": "Gitleaks",
@@ -29,10 +29,10 @@
       "reason": "Outdated dependencies with known vulnerabilities"
     },
     "iac": {
-      "tool": "Checkov + Conftest",
-      "status": "PASSED",
-      "findings": 0,
-      "reason": "No blocking misconfigurations found"
+      "tool": "Checkov",
+      "status": "FAILED",
+      "findings": "Multiple violations",
+      "reason": "S3 public, IAM wildcards, RDS public, SG open to 0.0.0.0/0"
     },
     "container": {
       "tool": "Hadolint + Trivy",
