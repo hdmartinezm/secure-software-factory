@@ -30,8 +30,8 @@ setuptools==78.1.1
 # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441, CVE-2026-44431 FIXED
 urllib3==2.7.0
 
-# CVE-2024-21272 FIXED - upgraded from 8.3.0
-mysql-connector-python==9.1.0
+# CVE-2024-21272, CVE-2026-30706 FIXED - upgraded to 9.6.0
+mysql-connector-python==9.6.0
 
 # Data validation
 pydantic==2.5.3
@@ -40,8 +40,8 @@ pydantic==2.5.3
 python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 
-# CVE-2024-24762, CVE-2024-53981, CVE-2026-24486, CVE-2026-42561, CVE-2026-53539 FIXED
-python-multipart==0.0.30
+# CVE-2024-24762, CVE-2024-53981, CVE-2026-24486, CVE-2026-42561, CVE-2026-53539, CVE-2026-40347 FIXED
+python-multipart==0.0.32
 
 # Pinned pip for reproducibility
 pip==24.0
