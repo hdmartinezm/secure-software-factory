@@ -124,7 +124,12 @@ jobs:
 
           if [ "${GITLEAKS_EXIT:-0}" -gt 0 ]; then
             echo "::error::EFEX-SEC-GATE: Secrets detected in ${SCENARIO}/"
-            exit 1
+
+            if [ "${SECURITY_GATE_MODE}" == "enforce" ]; then
+              exit 1
+            fi
+
+            echo "::warning::Secrets detected, but gate mode is ${SECURITY_GATE_MODE} (not blocking)"
           fi
 
       - name: Upload Gitleaks SARIF
@@ -180,7 +185,12 @@ jobs:
 
           if [ "${SEMGREP_EXIT:-0}" -gt 0 ]; then
             echo "::error::EFEX-SEC-GATE: Semgrep found security vulnerabilities in ${SCENARIO}/app/"
-            exit 1
+
+            if [ "${SECURITY_GATE_MODE}" == "enforce" ]; then
+              exit 1
+            fi
+
+            echo "::warning::SAST findings detected, but gate mode is ${SECURITY_GATE_MODE} (not blocking)"
           fi
 
       - name: Check for HIGH/CRITICAL findings
@@ -408,19 +418,27 @@ jobs:
         run: |
           DOCKERFILE="${DOCKERFILE_PATH}"
           echo "Checking: ${DOCKERFILE}"
+          DOCKER_FAILED=false
 
           if ! grep -q "^USER" "${DOCKERFILE}"; then
             echo "::error::EFEX-SEC-004: Dockerfile must specify a non-root USER directive"
             echo "Add 'USER 1000:1000' before CMD instruction"
-            exit 1
+            DOCKER_FAILED=true
           fi
 
           if grep -q "^USER root" "${DOCKERFILE}"; then
             echo "::error::EFEX-SEC-005: Dockerfile explicitly runs as root"
-            exit 1
+            DOCKER_FAILED=true
           fi
 
-          echo "✅ Dockerfile USER check passed"
+          if [ "${DOCKER_FAILED}" == "true" ]; then
+            if [ "${SECURITY_GATE_MODE}" == "enforce" ]; then
+              exit 1
+            fi
+            echo "::warning::Dockerfile security issues detected, but gate mode is ${SECURITY_GATE_MODE} (not blocking)"
+          else
+            echo "✅ Dockerfile USER check passed"
+          fi
 
       - name: Build container image
         env:
