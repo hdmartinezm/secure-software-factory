@@ -680,7 +680,10 @@ jobs:
     name: "📋 SBOM & Signing"
     needs: [security-gate]
     runs-on: ubuntu-latest
-    if: needs.security-gate.result == 'success'
+    # Only push/sign on main branch, not on PRs (GITHUB_TOKEN lacks packages:write on fork PRs)
+    if: >
+      needs.security-gate.result == 'success' &&
+      github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
