@@ -110,6 +110,15 @@ resource "aws_s3_bucket_public_access_block" "logs_public_access" {
   restrict_public_buckets = true
 }
 
+# SECURE: Versioning enabled for transaction logs
+resource "aws_s3_bucket_versioning" "logs_versioning" {
+  bucket = aws_s3_bucket.transaction_logs.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 # =============================================================================
 # KMS - Encryption Key
 # =============================================================================

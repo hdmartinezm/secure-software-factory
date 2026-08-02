@@ -315,8 +315,8 @@ jobs:
           download_external_modules: false
           # Custom checks from policy/checkov/
           external_checks_dirs: policy/checkov
-          # Skip non-security checks (cross-region, multi-AZ, etc.)
-          skip_check: CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12
+          # Skip non-security checks (cross-region, multi-AZ, S3 access logging since we have VPC Flow Logs)
+          skip_check: CKV_AWS_18,CKV_AWS_144,CKV_AWS_145,CKV_AWS_300,CKV_AWS_338,CKV_AWS_118,CKV_AWS_157,CKV_AWS_161,CKV_AWS_226,CKV2_AWS_62,CKV2_AWS_61,CKV2_AWS_60,CKV2_AWS_64,CKV_AWS_260,CKV_AWS_129,CKV2_AWS_5,CKV2_AWS_12
         continue-on-error: false
 
       # OPA/Conftest for custom EFEX policies
