@@ -42,20 +42,20 @@ uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
 | Action | SHA | Version |
 |--------|-----|---------|
-| `actions/checkout` | `692973e3d937129bcbf40652eb9f2f61becf3332` | v4.1.7 |
-| `actions/upload-artifact` | `834a144ee995460fba8ed112a2fc961b36a5ec5a` | v4.3.6 |
-| `actions/setup-python` | `39cd14951b08e74b54015e9e001cdefcf80e669f` | v5.1.1 |
-| `github/codeql-action/upload-sarif` | `2d790406f505036ef40ecba973cc774a50395aac` | v3.25.15 |
-| `aquasecurity/trivy-action` | `6e7b7d1fd3e4fef0c7fa525c3e52f8d20efcecfd` | v0.24.0 |
-| `hashicorp/setup-terraform` | `b9cd54a3c349d3c85f40e8e8e8e99c63c6cd8f10` | v3.1.1 |
-| `bridgecrewio/checkov-action` | `d2b801c47f51b102c4de10b27ac2573b7e2d1c90` | v12.2.0 |
-| `hadolint/hadolint-action` | `54c9adbab1582c2ef04b2c5c1b92b95c7b0e0b5e` | v3.1.0 |
-| `docker/setup-buildx-action` | `988b5a0280414f521da01fcc63a27aeeb4b104db` | v3.6.1 |
-| `docker/login-action` | `0d4c9c5ea7693da7b068278f7b52bda2a190a446` | v3.3.0 |
-| `docker/metadata-action` | `8e5442c4ef9f78752691e2d8f8d19755c6f78e81` | v5.5.1 |
-| `docker/build-push-action` | `16ebe778df0e7752d2cfcbd924afdbbd89c1a755` | v6.7.0 |
-| `anchore/sbom-action` | `61119d458adab75f756bc0b9e4bde25725f86a7a` | v0.17.0 |
-| `sigstore/cosign-installer` | `59acb6260d9c0ba8f4a2f9d9b48431a222b68e20` | v3.6.0 |
+| `actions/checkout` | `11d5960a326750d5838078e36cf38b85af677262` | v4 |
+| `actions/upload-artifact` | `ea165f8d65b6e75b540449e92b4886f43607fa02` | v4 |
+| `actions/setup-python` | `a26af69be951a213d495a4c3e4e4022e16d87065` | v5 |
+| `github/codeql-action/upload-sarif` | `47be0dbd5113ab1b79fe2dd3f68bdf7e426cdc87` | v3 |
+| `aquasecurity/trivy-action` | `c07df6fec6fa692e6fd1200d50aaa1fdd66f03c8` | master |
+| `hashicorp/setup-terraform` | `b9cd54a3c349d3f38e8881555d616ced269862dd` | v3 |
+| `bridgecrewio/checkov-action` | `7b972723c44fb3d256283fac96fae5d7c1894bb7` | v12 |
+| `hadolint/hadolint-action` | `54c9adbab1582c2ef04b2016b760714a4bfde3cf` | v3.1.0 |
+| `docker/setup-buildx-action` | `8d2750c68a42422c14e847fe6c8ac0403b4cbd6f` | v3 |
+| `docker/login-action` | `c94ce9fb468520275223c153574b00df6fe4bcc9` | v3 |
+| `docker/metadata-action` | `c299e40c65443455700f0fdfc63efafe5b349051` | v5 |
+| `docker/build-push-action` | `10e90e3645eae34f1e60eeb005ba3a3d33f178e8` | v6 |
+| `anchore/sbom-action` | `e22c389904149dbc22b58101806040fa8d37a610` | v0 |
+| `sigstore/cosign-installer` | `f713795cb21599bc4e5c4b58cbad1da852d7eeb9` | v3 |
 
 ### 2. Apply Least Privilege Permissions
 
