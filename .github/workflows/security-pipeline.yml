@@ -2,9 +2,16 @@
 # =================================================
 # Multi-layer DevSecOps pipeline with Policy-as-Code gates
 #
-# Branch-based scenarios:
-#   - main, remediated branches  → GREEN scenario (secure code, pipeline PASSES)
-#   - vulnerable-demo branch     → RED scenario (vulnerable code, pipeline FAILS)
+# Branch-based scenarios (determines WHICH code to scan):
+#   - main, remediated branches  → scans remediated/ folder (secure code)
+#   - vulnerable-demo branch     → scans vulnerable/ folder (insecure code)
+#
+# SECURITY_GATE_MODE (determines HOW findings are handled):
+#   - enforce (default): Block build on HIGH/CRITICAL findings
+#   - advise: Warn but don't block
+#   - observe: Log only
+#
+# The pipeline passes when code is ACTUALLY secure, not by disabling checks.
 #
 # Layers:
 #   1. Secrets Detection (gitleaks)
@@ -222,9 +229,9 @@ jobs:
           scan-type: 'fs'
           scan-ref: '${{ env.SCENARIO }}/app'
           severity: 'CRITICAL,HIGH'
-          # RED scenario (vulnerable): exit-code 1 to block
-          # GREEN scenario (remediated): exit-code 0 to pass
-          exit-code: ${{ env.SCENARIO == 'vulnerable' && '1' || '0' }}
+          # enforce: exit 1 on findings (block build)
+          # observe/advise: exit 0 (report only)
+          exit-code: ${{ env.SECURITY_GATE_MODE == 'enforce' && '1' || '0' }}
           format: 'sarif'
           output: 'trivy-sca.sarif'
           ignore-unfixed: true
@@ -302,9 +309,9 @@ jobs:
           framework: terraform
           output_format: cli,sarif
           output_file_path: console,checkov-results.sarif
-          # RED scenario (vulnerable): hard fail on security issues
-          # GREEN scenario (remediated): soft fail (best practice warnings only)
-          soft_fail: ${{ env.SCENARIO == 'remediated' }}
+          # enforce: hard fail on security issues
+          # observe/advise: soft fail (report only)
+          soft_fail: ${{ env.SECURITY_GATE_MODE != 'enforce' }}
           download_external_modules: false
           # Custom checks from policy/checkov/
           external_checks_dirs: policy/checkov
@@ -335,12 +342,12 @@ jobs:
             --all-namespaces \
             > conftest-results.json 2>&1 || true
 
-          # Check for failures (only block for vulnerable scenario)
+          # Check for failures (block only in enforce mode)
           FAILURES=$(jq '[.[] | select(.failures | length > 0)] | length' conftest-results.json 2>/dev/null || echo "0")
           if [ "$FAILURES" -gt 0 ]; then
             echo "::error::EFEX Policy violations detected:"
             jq -r '.[] | .failures[]? | "- \(.msg)"' conftest-results.json
-            if [ "${SCENARIO}" == "vulnerable" ]; then
+            if [ "${SECURITY_GATE_MODE}" == "enforce" ]; then
               exit 1
             fi
           fi
@@ -429,9 +436,9 @@ jobs:
         with:
           image-ref: 'efex-app:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          # RED scenario (vulnerable): exit-code 1 to block
-          # GREEN scenario (remediated): exit-code 0 to pass
-          exit-code: ${{ env.SCENARIO == 'vulnerable' && '1' || '0' }}
+          # enforce: exit 1 on findings (block build)
+          # observe/advise: exit 0 (report only)
+          exit-code: ${{ env.SECURITY_GATE_MODE == 'enforce' && '1' || '0' }}
           format: 'sarif'
           output: 'trivy-container.sarif'
           ignore-unfixed: true
