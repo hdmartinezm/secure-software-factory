@@ -30,8 +30,8 @@ setuptools==78.1.1
 # CVE-2025-66418, CVE-2025-66471, CVE-2026-21441, CVE-2026-44431 FIXED
 urllib3==2.7.0
 
-# CVE-2024-21272, CVE-2026-30706 FIXED - upgraded to 9.6.0
-mysql-connector-python==9.6.0
+# All known CVEs FIXED - upgraded to latest
+mysql-connector-python==26.7.0
 
 # Data validation
 pydantic==2.5.3
