@@ -40,6 +40,12 @@ pydantic==2.5.3
 python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 
+# Transitive dependency CVEs FIXED
+# CVE-2026-23490, CVE-2026-30922, CVE-2026-59884, CVE-2026-59885, CVE-2026-59886 FIXED
+pyasn1>=0.6.4
+# CVE-2026-23949 FIXED
+jaraco.context>=6.1.0
+
 # CVE-2024-24762, CVE-2024-53981, CVE-2026-24486, CVE-2026-42561, CVE-2026-53539, CVE-2026-40347 FIXED
 python-multipart==0.0.32
 
