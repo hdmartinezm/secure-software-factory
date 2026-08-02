@@ -214,21 +214,26 @@ log_header "Layer 3: Dependency Scan (Trivy SCA)"
 
 TRIVY_REPORT="$EVIDENCE_DIR/trivy-sca.sarif"
 
-if trivy fs \
+# Run Trivy with exit-code 0 to always generate report, then count results manually
+trivy fs \
     --scanners vuln \
     --severity HIGH,CRITICAL \
     --ignore-unfixed \
+    --exit-code 0 \
     --format sarif \
     --output "$TRIVY_REPORT" \
-    "$APP_DIR" 2>/dev/null; then
-    log_success "No HIGH/CRITICAL CVEs in dependencies"
-else
-    if [ -f "$TRIVY_REPORT" ]; then
-        CVE_COUNT=$(jq '[.runs[].results[]] | length' "$TRIVY_REPORT" 2>/dev/null || echo "0")
+    "$APP_DIR" 2>/dev/null
+
+if [ -f "$TRIVY_REPORT" ]; then
+    CVE_COUNT=$(jq '[.runs[].results[]] | length' "$TRIVY_REPORT" 2>/dev/null || echo "0")
+    if [ "$CVE_COUNT" -gt 0 ]; then
         log_error "Found $CVE_COUNT vulnerable dependencies"
+        FAILED_CHECKS+=("sca")
     else
-        log_error "Trivy scan failed"
+        log_success "No HIGH/CRITICAL CVEs in dependencies"
     fi
+else
+    log_error "Trivy scan failed"
     FAILED_CHECKS+=("sca")
 fi
 
