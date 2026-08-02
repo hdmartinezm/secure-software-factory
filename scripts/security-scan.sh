@@ -11,7 +11,12 @@
 # - CircleCI
 # - Local development
 #
-# Usage: ./scripts/security-scan.sh [--soft-fail] [--skip-iac]
+# Usage: ./scripts/security-scan.sh [vulnerable|remediated] [--soft-fail] [--skip-iac]
+#
+# Examples:
+#   ./scripts/security-scan.sh vulnerable      # Scan vulnerable code (expects failures)
+#   ./scripts/security-scan.sh remediated      # Scan remediated code (expects pass)
+#   ./scripts/security-scan.sh                 # Defaults to remediated
 # =============================================================================
 
 set -euo pipefail
@@ -21,11 +26,35 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-EVIDENCE_DIR="${ROOT_DIR}/evidence/scan-results"
 SOFT_FAIL=false
 SKIP_IAC=false
 
-# Parse arguments
+# Parse scenario (first positional argument)
+SCENARIO="${1:-remediated}"
+if [[ "$SCENARIO" == "--"* ]]; then
+    # First arg is a flag, default to remediated
+    SCENARIO="remediated"
+else
+    shift 2>/dev/null || true
+fi
+
+# Validate scenario
+if [[ "$SCENARIO" != "vulnerable" && "$SCENARIO" != "remediated" ]]; then
+    echo "Usage: $0 [vulnerable|remediated] [--soft-fail] [--skip-iac]"
+    echo ""
+    echo "Scenarios:"
+    echo "  vulnerable  - Scan vulnerable/ folder (expects security failures)"
+    echo "  remediated  - Scan remediated/ folder (expects clean pass)"
+    exit 1
+fi
+
+# Set paths based on scenario
+APP_DIR="$ROOT_DIR/$SCENARIO/app"
+INFRA_DIR="$ROOT_DIR/$SCENARIO/infra"
+DOCKERFILE="$ROOT_DIR/$SCENARIO/Dockerfile"
+EVIDENCE_DIR="${ROOT_DIR}/evidence/${SCENARIO}"
+
+# Parse remaining arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --soft-fail) SOFT_FAIL=true; shift ;;
@@ -86,7 +115,10 @@ echo "╚═══════════════════════�
 echo -e "${NC}"
 
 echo "Configuration:"
-echo "  Root directory: $ROOT_DIR"
+echo "  Scenario: $SCENARIO"
+echo "  App directory: $APP_DIR"
+echo "  Infra directory: $INFRA_DIR"
+echo "  Dockerfile: $DOCKERFILE"
 echo "  Evidence output: $EVIDENCE_DIR"
 echo "  Soft fail mode: $SOFT_FAIL"
 echo "  Skip IaC: $SKIP_IAC"
@@ -124,7 +156,8 @@ log_header "Layer 1: Secrets Detection (Gitleaks)"
 GITLEAKS_REPORT="$EVIDENCE_DIR/gitleaks.sarif"
 
 if gitleaks detect \
-    --source "$ROOT_DIR" \
+    --source "$APP_DIR" \
+    --no-git \
     --config "$ROOT_DIR/.gitleaks.toml" \
     --report-format sarif \
     --report-path "$GITLEAKS_REPORT" \
@@ -161,7 +194,7 @@ if semgrep scan \
     --sarif \
     --output "$SEMGREP_REPORT" \
     --error \
-    "$ROOT_DIR/vulnerable-app" 2>/dev/null; then
+    "$APP_DIR" 2>/dev/null; then
     log_success "No high-severity vulnerabilities found"
 else
     SAST_EXIT=$?
@@ -187,7 +220,7 @@ if trivy fs \
     --ignore-unfixed \
     --format sarif \
     --output "$TRIVY_REPORT" \
-    "$ROOT_DIR/vulnerable-app" 2>/dev/null; then
+    "$APP_DIR" 2>/dev/null; then
     log_success "No HIGH/CRITICAL CVEs in dependencies"
 else
     if [ -f "$TRIVY_REPORT" ]; then
@@ -202,13 +235,13 @@ fi
 # -----------------------------------------------------------------------------
 # Layer 4: IaC - Infrastructure as Code Security (Checkov)
 # -----------------------------------------------------------------------------
-if [ "$SKIP_IAC" = false ] && [ -d "$ROOT_DIR/infra" ]; then
+if [ "$SKIP_IAC" = false ] && [ -d "$INFRA_DIR" ]; then
     log_header "Layer 4: Infrastructure Security (Checkov)"
 
     CHECKOV_REPORT="$EVIDENCE_DIR/checkov.sarif"
 
     if checkov \
-        --directory "$ROOT_DIR/infra" \
+        --directory "$INFRA_DIR" \
         --framework terraform \
         --output-file-path "$EVIDENCE_DIR" \
         --output sarif \
@@ -232,18 +265,18 @@ if [ "$SKIP_IAC" = false ] && [ -d "$ROOT_DIR/infra" ]; then
         FAILED_CHECKS+=("iac")
     fi
 else
-    log_warn "Skipping IaC scan (--skip-iac or no infra/ directory)"
+    log_warn "Skipping IaC scan (--skip-iac or no $INFRA_DIR directory)"
 fi
 
 # -----------------------------------------------------------------------------
 # Layer 5: Container Security (Trivy + Dockerfile lint)
 # -----------------------------------------------------------------------------
-if [ -f "$ROOT_DIR/Dockerfile" ]; then
+if [ -f "$DOCKERFILE" ]; then
     log_header "Layer 5: Container Security"
 
     # Check for USER directive
-    if grep -q "^USER" "$ROOT_DIR/Dockerfile"; then
-        if grep -q "^USER root" "$ROOT_DIR/Dockerfile"; then
+    if grep -q "^USER" "$DOCKERFILE"; then
+        if grep -q "^USER root" "$DOCKERFILE"; then
             log_error "Dockerfile runs as root user"
             FAILED_CHECKS+=("container")
         else
@@ -255,11 +288,13 @@ if [ -f "$ROOT_DIR/Dockerfile" ]; then
     fi
 
     # Check for HEALTHCHECK
-    if grep -q "^HEALTHCHECK" "$ROOT_DIR/Dockerfile"; then
+    if grep -q "^HEALTHCHECK" "$DOCKERFILE"; then
         log_success "Dockerfile has HEALTHCHECK"
     else
         log_warn "Dockerfile missing HEALTHCHECK (recommended)"
     fi
+else
+    log_warn "Dockerfile not found at $DOCKERFILE"
 fi
 
 # -----------------------------------------------------------------------------
