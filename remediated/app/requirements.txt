@@ -45,3 +45,6 @@ python-multipart==0.0.32
 
 # CVE-2025-8869, CVE-2026-1703, CVE-2026-3219, CVE-2026-6357, CVE-2026-8643 FIXED
 pip==26.1.2
+
+# CVE-2026-24049 FIXED - wheel vulnerability
+wheel>=0.46.2
