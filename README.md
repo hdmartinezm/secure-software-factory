@@ -1203,3 +1203,606 @@ evidence/
 ## License
 
 Internal use only - EFEX Confidential
+
+---
+
+# EFEX Secure Software Factory (Español)
+
+> **Tech Challenge: Staff Security Platform Engineer**
+> Pipeline DevSecOps y Policy-as-Code Gate
+
+## Resumen de Arquitectura
+
+![Arquitectura EFEX Secure Software Factory](docs/images/secure-software-factory-architecture.png)
+
+## Descripción General
+
+Este repositorio demuestra una **Fábrica de Software Seguro** para EFEX, una plataforma fintech que maneja operaciones de tesorería y FX en el corredor México-EE.UU. La implementación incluye:
+
+1. **Aplicación Demo Vulnerable** (`vulnerable/`) - Código intencionalmente inseguro con secretos DEMO (no son credenciales reales)
+2. **Aplicación Remediada** (`remediated/`) - Versión segura con todas las vulnerabilidades corregidas
+3. **Pipeline DevSecOps Multi-capa** - GitHub Actions con 7 puertas de seguridad
+4. **Policy-as-Code Gates** - Políticas personalizadas de Gitleaks, Semgrep y Checkov para EFEX
+5. **Seguridad de Cadena de Suministro** - Generación de SBOM con Syft y firma de artefactos con cosign
+
+## Flujo del Pipeline
+
+![Flujo del Pipeline de Seguridad EFEX](docs/images/security-pipeline-flow.png)
+
+## Evidencia del Pipeline (Ejecuciones en Vivo)
+
+| Escenario | Run ID | Estado | Puertas de Seguridad | Enlace |
+|-----------|--------|--------|----------------------|--------|
+| **ROJO** | 30771471219 | FALLA | 5/5 fallaron | [Ver Ejecución](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771471219) |
+| **VERDE** | 30771628476 | ÉXITO | 5/5 pasaron | [Ver Ejecución](https://github.com/hdmartinezm/secure-software-factory/actions/runs/30771628476) |
+
+### Hallazgos del Escenario ROJO
+
+| Puerta de Seguridad | Herramienta | Hallazgos | Estado |
+|---------------------|-------------|-----------|--------|
+| Detección de Secretos | Gitleaks | 4 secretos demo | FALLÓ |
+| Análisis SAST | Semgrep | 13 vulnerabilidades | FALLÓ |
+| Escaneo de Dependencias (SCA) | Trivy | CVEs HIGH/CRITICAL | FALLÓ |
+| Seguridad IaC | Checkov | Violaciones de política | FALLÓ |
+| Seguridad de Contenedor | Hadolint | Usuario root (sin USER) | FALLÓ |
+
+## Comparación Rojo/Verde
+
+| Componente | Vulnerable (Rojo) | Remediado (Verde) |
+|------------|-------------------|-------------------|
+| **App FastAPI** | Secretos demo hardcodeados (`HARDCODED_SECRET_FOR_DEMO`) | Variables de entorno |
+| **Consultas SQL** | Concatenación de strings (inyección) | Consultas parametrizadas |
+| **Subprocess** | `shell=True` (inyección de comandos) | `shell=False` con lista de args |
+| **YAML** | `yaml.load()` (ejecución de código) | `yaml.safe_load()` |
+| **Logging** | Registra contraseñas/tokens | Datos sensibles redactados |
+| **Docker** | Ejecuta como root, imagen sin pin | Usuario no-root, imagen con pin |
+| **Terraform S3** | Público, sin cifrado | Privado, AES-256 + KMS |
+| **Terraform IAM** | `Action: "*"` wildcard | Mínimo privilegio |
+| **Dependencias** | CVEs conocidos (PyYAML 5.3.1) | Versiones parcheadas |
+
+## Estructura del Repositorio
+
+```
+secure-software-factory/
+├── vulnerable/              # INTENCIONALMENTE INSEGURO (para demo)
+│   ├── app/
+│   │   ├── main.py         # Secretos demo, SQLi, inyección de comandos
+│   │   └── requirements.txt # Dependencias con CVEs conocidos
+│   ├── Dockerfile          # Ejecuta como root, imagen sin pin
+│   └── infra/
+│       └── main.tf         # S3 público, IAM *, SGs abiertos
+│
+├── remediated/              # VERSIÓN SEGURA
+│   ├── app/
+│   │   ├── main.py         # Variables de entorno, consultas parametrizadas
+│   │   └── requirements.txt # Dependencias parcheadas
+│   ├── Dockerfile          # No-root, multi-stage, healthcheck
+│   └── infra/
+│       └── main.tf         # Cifrado, mínimo privilegio
+│
+├── .github/workflows/       # Pipeline CI/CD (GitHub Actions)
+│   └── security-pipeline.yml
+├── pipelines/               # Ejemplos CI/CD multi-plataforma
+│   ├── azure-pipelines.yml  # Azure DevOps
+│   ├── buildspec.yml        # AWS CodeBuild/CodePipeline
+│   └── .gitlab-ci.yml       # GitLab CI/CD
+├── scripts/
+│   └── security-scan.sh     # Scanner de seguridad universal
+├── policy/                  # Políticas de seguridad personalizadas
+│   ├── terraform/          # Políticas OPA/Conftest
+│   └── docker/             # Políticas de contenedor
+├── .semgrep/               # Reglas SAST personalizadas
+├── .gitleaks.toml          # Configuración de detección de secretos
+├── evidence/               # Demostración Rojo/Verde
+│   ├── red/               # Evidencia de falla del pipeline
+│   └── green/             # Evidencia de éxito del pipeline
+└── docs/adr/               # Registros de Decisiones de Arquitectura
+```
+
+## Secretos Demo
+
+La carpeta `vulnerable/` contiene **secretos demo intencionales** que son:
+- Claramente marcados como valores demo (`HARDCODED_SECRET_FOR_DEMO`, `DEMO_API_KEY_*`)
+- Detectados por reglas personalizadas de Gitleaks y Semgrep
+- **No son credenciales reales** - seguros para repositorios públicos
+
+```python
+# vulnerable/app/main.py - Secretos demo (NO REALES)
+DATABASE_PASSWORD = "HARDCODED_SECRET_FOR_DEMO_efex2024"
+SPEI_API_TOKEN = "DEMO_API_KEY_spei_tk_12345678"
+JWT_SECRET_KEY = "DEMO_JWT_SECRET_super_insecure_key"
+AWS_ACCESS_KEY = "AKIADEMO12345EXAMPLE"
+AWS_SECRET_KEY = "DEMO_SECRET_wJalrXUtnFEMI_K7MDENG_bPxRfiCY"
+```
+
+**Reglas personalizadas de Gitleaks** en `.gitleaks.toml` detectan estos patrones:
+- `efex-demo-hardcoded-secret` - HARDCODED_SECRET_FOR_DEMO*
+- `efex-demo-api-key` - DEMO_API_KEY_*
+- `efex-demo-jwt-secret` - DEMO_JWT_SECRET_*
+- `efex-demo-generic` - DEMO_SECRET_*
+- `efex-demo-aws-key` - AKIADEMO*
+
+Este enfoque permite demostrar el escenario Rojo sin exponer secretos reales ni activar la protección de push de GitHub.
+
+## Pipeline de Seguridad Agnóstico de Plataforma
+
+Las herramientas de seguridad utilizadas en esta fábrica son **basadas en CLI y agnósticas de plataforma**. Los mismos escaneos funcionan en cualquier plataforma CI/CD:
+
+### Plataformas Soportadas
+
+| Plataforma | Archivo de Configuración | Estado |
+|------------|--------------------------|--------|
+| GitHub Actions | `.github/workflows/security-pipeline.yml` | Principal |
+| Azure DevOps | `pipelines/azure-pipelines.yml` | Ejemplo |
+| AWS CodePipeline | `pipelines/buildspec.yml` | Ejemplo |
+| GitLab CI/CD | `pipelines/.gitlab-ci.yml` | Ejemplo |
+| Jenkins | Usar `scripts/security-scan.sh` | Portable |
+| CircleCI | Usar `scripts/security-scan.sh` | Portable |
+| Local/Dev | Usar `scripts/security-scan.sh` | Portable |
+
+### Herramientas de Seguridad Core
+
+Todos los pipelines usan las mismas herramientas open-source, estándar de la industria:
+
+| Capa | Herramienta | Propósito | Salida |
+|------|-------------|-----------|--------|
+| Secretos | [Gitleaks](https://github.com/gitleaks/gitleaks) | Detectar secretos hardcodeados | SARIF |
+| SAST | [Semgrep](https://github.com/returntocorp/semgrep) | Análisis estático de código | SARIF |
+| SCA | [Trivy](https://github.com/aquasecurity/trivy) | Vulnerabilidades en dependencias | SARIF |
+| IaC | [Checkov](https://github.com/bridgecrewio/checkov) | Seguridad de infraestructura | SARIF |
+| Contenedor | [Trivy](https://github.com/aquasecurity/trivy) + [Hadolint](https://github.com/hadolint/hadolint) | Vulnerabilidades en imágenes | SARIF |
+| SBOM | [Syft](https://github.com/anchore/syft) | Bill of Materials de Software | SPDX, CycloneDX |
+| Firma | [Cosign](https://github.com/sigstore/cosign) | Firma de artefactos | Sigstore |
+
+### Scanner de Seguridad Universal
+
+El script `scripts/security-scan.sh` ejecuta todas las verificaciones de seguridad en **cualquier plataforma**:
+
+```bash
+# Ejecutar todos los escaneos de seguridad
+./scripts/security-scan.sh
+
+# Modo soft-fail (para debugging en CI)
+./scripts/security-scan.sh --soft-fail
+
+# Saltar escaneos IaC
+./scripts/security-scan.sh --skip-iac
+```
+
+La salida se escribe en `evidence/scan-results/` en formato SARIF para reportes unificados.
+
+### ¿Por qué Agnóstico de Plataforma?
+
+1. **Sin lock-in de vendor**: Cambiar plataformas CI/CD sin reescribir escaneos de seguridad
+2. **Seguridad consistente**: Mismas herramientas = misma detección en todos los entornos
+3. **Desarrollo local**: Los desarrolladores pueden ejecutar escaneos antes de hacer push
+4. **Cumplimiento**: Más fácil demostrar consistencia de controles a auditores
+
+## Matriz de Vulnerabilidades
+
+### Capa de Aplicación (vulnerable/app/main.py)
+
+| ID | Vulnerabilidad | Tipo | Herramienta de Detección | CVE/CWE | Impacto Regulatorio |
+|----|----------------|------|--------------------------|---------|---------------------|
+| EFEX-VULN-001 | Secretos hardcodeados (contraseña BD, API keys) | Secretos | gitleaks | CWE-798 | SOC 2 CC6.1, CNBV Art. 316 Bis |
+| EFEX-VULN-002 | Inyección SQL en búsqueda de cuenta | SAST | Semgrep | CWE-89 | SOC 2 CC6.6, OWASP A03 |
+| EFEX-VULN-003 | Inyección de Comandos vía subprocess | SAST | Semgrep | CWE-78 | SOC 2 CC6.6, OWASP A03 |
+| EFEX-VULN-004 | Deserialización YAML insegura | SAST | Semgrep | CVE-2020-14343 | Riesgo de RCE |
+| EFEX-VULN-005 | Datos sensibles en logs | SAST | Semgrep | CWE-532 | Protección de datos CNBV |
+
+### Dependencias (requirements.txt)
+
+| ID | Vulnerabilidad | Paquete | CVE | CVSS | Herramienta |
+|----|----------------|---------|-----|------|-------------|
+| EFEX-VULN-006a | Vulnerabilidad SSRF | requests==2.25.1 | CVE-2023-32681 | 6.1 | Trivy, Snyk |
+| EFEX-VULN-006b | Ejecución de código arbitrario | pyyaml==5.3.1 | CVE-2020-14343 | 9.8 CRÍTICO | Trivy, Snyk |
+| EFEX-VULN-006c | ReDoS | py==1.10.0 | CVE-2022-42969 | 7.5 | Trivy, Snyk |
+| EFEX-VULN-006d | Buffer overflow | numpy==1.19.4 | CVE-2021-41496 | 7.5 | Trivy, Snyk |
+| EFEX-VULN-006e | Bypass de certificado | certifi==2022.12.7 | CVE-2023-37920 | 9.8 CRÍTICO | Trivy, Snyk |
+
+### Contenedor (Dockerfile)
+
+| ID | Vulnerabilidad | Problema | Herramienta | Check ID |
+|----|----------------|----------|-------------|----------|
+| EFEX-VULN-007 | Ejecutando como root | Sin directiva USER | Trivy | DS002 |
+| EFEX-VULN-008 | Imagen base sin pin | `python:3.9` sin digest | Trivy | DS001 |
+| EFEX-VULN-009 | Secretos en contexto de build | COPY . . incluye secretos | Manual |
+| EFEX-VULN-010 | Sin HEALTHCHECK | Falta endpoint de salud | Trivy | DS026 |
+| EFEX-VULN-011 | Paquetes innecesarios | curl, wget, netcat instalados | Trivy |
+| EFEX-VULN-012 | ADD en lugar de COPY | Riesgo de fetch de URL | Hadolint | DL3020 |
+
+### Infraestructura (vulnerable/infra/main.tf)
+
+| ID | Vulnerabilidad | Recurso | Herramienta | Check ID | Impacto Regulatorio |
+|----|----------------|---------|-------------|----------|---------------------|
+| EFEX-VULN-013 | S3 sin cifrado | aws_s3_bucket.kyc_documents | Checkov | CKV_AWS_19 | CNBV Art. 316 Bis 17 |
+| EFEX-VULN-014 | Acceso público S3 | aws_s3_bucket_public_access_block | Checkov | CKV_AWS_20/21 | LFPDPPP |
+| EFEX-VULN-015 | IAM Action: "*" | aws_iam_policy.transfer_service | Checkov | CKV_AWS_1 | SOC 2 CC6.3 |
+| EFEX-VULN-016 | IAM Resource: "*" | aws_iam_policy.transfer_service | Checkov | CKV_AWS_49 | SOC 2 CC6.3 |
+| EFEX-VULN-017 | SG abierto a 0.0.0.0/0 | aws_security_group.api_service | Checkov | CKV_AWS_23/24/25 | SOC 2 CC6.6 |
+| EFEX-VULN-018 | RDS sin cifrado | aws_db_instance.transfers | Checkov | CKV_AWS_16 | Cifrado CNBV |
+| EFEX-VULN-019 | RDS accesible públicamente | aws_db_instance.transfers | Checkov | CKV_AWS_17 | Segmentación de red |
+| EFEX-VULN-020 | CloudWatch sin KMS | aws_cloudwatch_log_group | Checkov | CKV_AWS_97 | SOC 2 CC6.1 |
+| EFEX-VULN-021 | Sin VPC Flow Logs | aws_vpc.main | Checkov | CKV_AWS_12 | SOC 2 CC7.1 |
+
+## Mapeo Regulatorio
+
+| Área de Control | CNBV/IFPE | SOC 2 | Cobertura de Vulnerabilidades EFEX |
+|-----------------|-----------|-------|-----------------------------------|
+| Cifrado en Reposo | Art. 316 Bis 17 | CC6.1 | EFEX-VULN-013, 018, 020 |
+| Control de Acceso | Circular 4/2021 | CC6.3 | EFEX-VULN-015, 016, 017 |
+| Segmentación de Red | Anexo 1-A | CC6.6 | EFEX-VULN-017, 019 |
+| Gestión de Secretos | Art. 316 Bis | CC6.1 | EFEX-VULN-001 |
+| Gestión de Vulnerabilidades | Circular 4/2021 | CC7.1 | EFEX-VULN-006a-e |
+| Pista de Auditoría | Anexo 1-A | CC7.2 | EFEX-VULN-005, 021 |
+
+## Experiencia del Desarrollador
+
+> **Filosofía**: La seguridad debe habilitar a los desarrolladores, no bloquearlos. Retroalimentación rápida, insights accionables e integración transparente en flujos de trabajo existentes.
+
+### Rendimiento del Pipeline
+
+Los escaneos de seguridad están optimizados para **retroalimentación rápida** - los desarrolladores obtienen resultados en minutos, no horas:
+
+| Puerta de Seguridad | Tiempo Promedio | Paralelización |
+|---------------------|-----------------|----------------|
+| Detección de Secretos | ~15s | Paralelo |
+| Análisis SAST | ~30s | Paralelo |
+| Escaneo de Dependencias (SCA) | ~45s | Paralelo |
+| Seguridad IaC | ~30s | Paralelo |
+| Seguridad de Contenedor | ~60s | Paralelo |
+| **Pipeline Total** | **~3 min** | Todas las puertas corren simultáneamente |
+
+### Integración SARIF
+
+Todas las herramientas de seguridad generan **SARIF (Static Analysis Results Interchange Format)** para reportes unificados:
+
+**Beneficios:**
+- Formato unificado en todas las herramientas
+- Integración con GitHub Code Scanning (pestaña Security)
+- Compatibilidad con IDEs (VS Code, JetBrains)
+- Dashboards y métricas agregadas
+- Análisis de tendencias históricas
+
+### Integración con IDE
+
+#### VS Code
+
+```bash
+# Instalar extensión Semgrep
+code --install-extension semgrep.semgrep
+
+# Instalar extensión Gitleaks
+code --install-extension gitleaks.gitleaks
+
+# Instalar extensión Checkov
+code --install-extension bridgecrew.checkov
+```
+
+**Retroalimentación en tiempo real** mientras codificas:
+- Subrayados rojos en patrones de inyección SQL
+- Advertencias en secretos hardcodeados
+- Misconfiguraciones IaC resaltadas
+
+### Desarrollo Local
+
+**Shift-left** - detectar problemas antes de hacer push:
+
+```bash
+# Verificación rápida pre-commit (~30s)
+./scripts/security-scan.sh --quick
+
+# Escaneo completo antes de PR (~2min)
+./scripts/security-scan.sh
+
+# Escanear archivo específico
+semgrep scan --config .semgrep/ path/to/file.py
+```
+
+---
+
+## Estrategia de Rollout
+
+> **Objetivo**: Adoptar escaneo de seguridad en todos los repositorios EFEX sin disrumpir la velocidad de desarrollo.
+
+### Enfoque por Fases (3 Semanas)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   Rollout de Seguridad EFEX (3 Semanas)                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│     Semana 1           Semana 2           Semana 3           Después    │
+│     OBSERVAR           ASESORAR           APLICAR            OPTIMIZAR  │
+│                                                                          │
+│  ┌───────────┐      ┌───────────┐      ┌───────────┐      ┌──────────┐  │
+│  │ Soft-fail │  →   │Advertencia│  →   │ Hard-fail │  →   │  Ajustar │  │
+│  │ Solo log  │      │Comentario │      │Bloquear   │      │  Reglas  │  │
+│  └───────────┘      │    PR     │      │   HIGH    │      └──────────┘  │
+│                     └───────────┘      └───────────┘                     │
+│  • Baseline          • Training         • Puerta de       • Reducir    │
+│  • Cero ruido        • Corregir           seguridad ON      falsos +   │
+│  • Todos repos         backlog         • Bloquear HIGH+   • Reglas    │
+│                      • PR feedback                          custom     │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Semana 1: Observar (Modo Soft-Fail)
+
+**Duración**: 1 semana
+**Objetivo**: Establecer baseline del estado actual sin bloquear a nadie
+
+**Actividades**:
+- [ ] Desplegar pipeline a todos los repositorios
+- [ ] Recolectar métricas baseline (hallazgos por repo)
+- [ ] Identificar los 10 hallazgos más comunes
+- [ ] Cero falsos positivos antes de Fase 2
+
+### Semana 2: Asesorar (Modo Advertencia)
+
+**Duración**: 1 semana
+**Objetivo**: Mostrar hallazgos sin bloquear merges
+
+**Actividades**:
+- [ ] Habilitar comentarios en PR con hallazgos
+- [ ] Conducir sesiones de capacitación (30 min cada una)
+- [ ] Crear runbook interno de remediación
+- [ ] Corregir hallazgos HIGH/CRITICAL en repos críticos
+- [ ] Office hours para preguntas de desarrolladores
+
+### Semana 3: Aplicar (Modo Hard-Fail)
+
+**Duración**: 1 semana
+**Objetivo**: Bloquear vulnerabilidades HIGH/CRITICAL de ser mergeadas
+
+**Progresión de Enforcement (Semana 3)**:
+| Día | Qué se Bloquea | Qué tiene Advertencia |
+|-----|----------------|----------------------|
+| Día 1-2 | Solo secretos | SAST, SCA, IaC |
+| Día 3-4 | Secretos + SAST HIGH | SCA, IaC |
+| Día 5+ | Todo HIGH/CRITICAL | MEDIUM/LOW |
+
+### Después de Semana 3: Optimizar (Mejora Continua)
+
+**Duración**: Continuo
+**Objetivo**: Reducir ruido, mejorar precisión, medir progreso
+
+**Actividades**:
+- [ ] Revisión semanal de falsos positivos
+- [ ] Ajustar reglas Semgrep/Gitleaks basado en feedback
+- [ ] Agregar reglas personalizadas específicas de EFEX
+- [ ] Rastrear MTTR (Tiempo Medio de Remediación)
+- [ ] Revisión trimestral de postura de seguridad
+
+---
+
+## Waivers de Seguridad
+
+> **Seguridad del mundo real**: No todo hallazgo es una vulnerabilidad. Los waivers proveen una forma formal y auditable de documentar riesgos aceptados y falsos positivos.
+
+### Cómo Funcionan los Waivers
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Flujo de Waivers EFEX                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  1. IDENTIFICAR     2. DOCUMENTAR      3. APROBAR        4. RASTREAR   │
+│                                                                          │
+│  ┌───────────┐      ┌───────────┐      ┌───────────┐      ┌──────────┐  │
+│  │ Hallazgo  │  →   │  Crear    │  →   │  Equipo   │  →   │ Pipeline │  │
+│  │ detectado │      │waiver.yml │      │ seguridad │      │ valida   │  │
+│  └───────────┘      └───────────┘      │  PR review│      └──────────┘  │
+│                                        └───────────┘                     │
+│  • ¿Falso positivo? • Owner           • Aprobación CISO  • Expiración  │
+│  • ¿Riesgo aceptado?• Razón           • Link a ticket      verificada │
+│  • ¿Control         • Expiración      • Riesgo aceptado  • Recordatorios│
+│    compensatorio?   • Ticket                                auto-renovar│
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Estructura del Waiver
+
+```yaml
+# waivers/CKV_AWS_144.yaml
+id: "EFEX-WAIVER-001"
+finding_id: "CKV_AWS_144"           # El check que se está eximiendo
+owner: "platform-team"               # Equipo responsable
+approved_by: "ciso@efex.com"        # Debe estar en SECURITY_APPROVERS
+ticket: "SEC-2024-001"              # Ticket de seguimiento (requerido)
+reason: |
+  Replicación cross-region no requerida para ambiente demo.
+  Producción tendrá replicación habilitada.
+risk_accepted: true                  # Reconocimiento explícito
+expiration: "2026-10-15"            # REQUERIDO - máximo 90 días
+created: "2026-07-15"
+
+metadata:
+  severity: "medium"
+  compensating_controls:
+    - "Backups diarios a cuenta AWS separada"
+    - "Versionamiento S3 habilitado"
+```
+
+---
+
+## Métricas de Seguridad y KPIs
+
+> **Lo que se mide, se mejora.** Estas métricas permiten decisiones de seguridad basadas en datos y demuestran ROI a liderazgo.
+
+### Métricas Core
+
+#### 1. Duración del Pipeline
+
+**Definición**: Tiempo desde push hasta resultado de puerta de seguridad.
+
+| Métrica | Objetivo | Actual | Tendencia |
+|---------|----------|--------|-----------|
+| P50 (mediana) | < 3 min | 2m 47s | ✅ |
+| P95 | < 5 min | 4m 12s | ✅ |
+| P99 | < 8 min | 6m 30s | ✅ |
+
+#### 2. Hallazgos Críticos/Altos
+
+**Definición**: Vulnerabilidades abiertas por severidad en ramas de producción.
+
+| Severidad | Objetivo | Actual | SLA |
+|-----------|----------|--------|-----|
+| Crítico | 0 | 0 | 24 horas |
+| Alto | < 5 | 3 | 7 días |
+| Medio | < 20 | 12 | 30 días |
+| Bajo | Rastrear | 45 | Mejor esfuerzo |
+
+#### 3. Tiempo Medio de Corrección (MTTF)
+
+**Definición**: Tiempo promedio desde detección de hallazgo hasta remediación.
+
+| Severidad | Objetivo | Actual | Tendencia |
+|-----------|----------|--------|-----------|
+| Crítico | < 24h | 4h | ✅ ▼ |
+| Alto | < 7 días | 1.8 días | ✅ ▼ |
+| Medio | < 30 días | 12 días | ✅ |
+| Bajo | < 90 días | 45 días | ⚠️ |
+
+### Dashboard Ejecutivo
+
+| KPI | Estado | Tendencia | Notas |
+|-----|--------|-----------|-------|
+| **Postura de Seguridad** | 🟢 Buena | ↑ 15% | Sin hallazgos críticos |
+| **Salud del Pipeline** | 🟢 Buena | → Estable | 99.2% tasa de éxito |
+| **Impacto a Desarrolladores** | 🟢 Mínimo | ↓ 12% | Escaneos más rápidos |
+| **Cumplimiento** | 🟢 Cumple | → Estable | SOC 2, CNBV |
+| **Higiene de Waivers** | 🟡 Atención | → | 1 waiver expirado |
+| **Cobertura** | 🟡 94% | ↑ 6% | 3 repos pendientes |
+
+---
+
+## Inicio Rápido
+
+### Prerrequisitos
+
+- Docker
+- Python 3.9+
+- Herramientas de seguridad: gitleaks, semgrep, trivy, checkov (ver comandos de instalación abajo)
+
+### Instalar Herramientas de Seguridad
+
+```bash
+# macOS (Homebrew)
+brew install gitleaks trivy
+pip install semgrep checkov
+
+# Linux
+curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz | tar xz -C /usr/local/bin
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+pip install semgrep checkov
+```
+
+### Ejecutar Escaneos de Seguridad Localmente
+
+**Opción 1: Scanner Universal (Recomendado)**
+
+```bash
+# Clonar el repositorio
+git clone https://github.com/hdmartinezm/secure-software-factory.git
+cd secure-software-factory
+
+# Ejecutar todos los escaneos de seguridad con un solo comando
+./scripts/security-scan.sh
+
+# Resultados guardados en evidence/scan-results/
+```
+
+**Opción 2: Herramientas Individuales**
+
+```bash
+# Escaneo de secretos (detectará secretos demo en vulnerable/)
+gitleaks detect --source . --config .gitleaks.toml --verbose
+
+# Escaneo SAST (código vulnerable)
+semgrep scan --config auto --config .semgrep/ ./vulnerable/app
+
+# Escaneo SCA (dependencias vulnerables)
+trivy fs --severity HIGH,CRITICAL --ignore-unfixed vulnerable/app/
+
+# Escaneo IaC (infraestructura vulnerable)
+checkov -d vulnerable/infra/ --framework terraform
+
+# Escaneo de contenedor (Dockerfile vulnerable)
+docker build -f vulnerable/Dockerfile -t efex-vulnerable:test vulnerable/
+trivy image --severity HIGH,CRITICAL efex-vulnerable:test
+
+# Escaneo de contenedor (Dockerfile remediado)
+docker build -f remediated/Dockerfile -t efex-secure:test remediated/
+trivy image --severity HIGH,CRITICAL efex-secure:test
+```
+
+### Activar Pipeline
+
+**GitHub Actions:**
+```bash
+git push origin feature/demo
+# O manualmente: gh workflow run security-pipeline.yml
+```
+
+**Azure DevOps:**
+```bash
+# Copiar pipelines/azure-pipelines.yml a tu repo
+# Configurar pipeline en configuración del proyecto Azure DevOps
+```
+
+**AWS CodePipeline:**
+```bash
+# Usar pipelines/buildspec.yml con CodeBuild
+# Configurar CodePipeline con fuente CodeCommit
+```
+
+**GitLab CI:**
+```bash
+# Copiar pipelines/.gitlab-ci.yml a .gitlab-ci.yml en la raíz del repo
+```
+
+## Estructura de Evidencia
+
+El directorio `evidence/` contiene reportes detallados demostrando los escenarios Rojo/Verde:
+
+```
+evidence/
+├── red/
+│   └── pipeline-failure-report.md   # Análisis detallado escenario ROJO
+├── green/
+│   └── pipeline-success-report.md   # Análisis detallado escenario VERDE
+└── scenario-comparison.md           # Comparación lado a lado
+```
+
+### Archivos de Evidencia Clave
+
+| Archivo | Descripción |
+|---------|-------------|
+| `evidence/red/pipeline-failure-report.md` | Run 30771471219 - 5 puertas fallaron |
+| `evidence/green/pipeline-success-report.md` | Run 30771628476 - Todas las puertas pasaron |
+| `evidence/scenario-comparison.md` | Comparación visual, mapeo de cumplimiento |
+
+### Qué Valida el Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Pipeline de Seguridad EFEX                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  vulnerable/                          │  Rama Main                  │
+│  ─────────────                        │  ──────────                 │
+│  [Secretos]     → FALLA (4 secretos)  │  [Contenedor] → PASA        │
+│  [SAST]         → FALLA (13 vulns)    │  [SBOM]       → Generado    │
+│  [SCA]          → FALLA (CVEs)        │  [Firma]      → Cosign      │
+│  [IaC]          → FALLA (7 issues)    │                             │
+│                                       │                             │
+│  ════════════════════════════════     │  ════════════════════════   │
+│  🚫 PUERTA SEGURIDAD: BLOQUEADO       │  ✅ PUERTA SEGURIDAD: PASÓ  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## Licencia
+
+Uso interno únicamente - EFEX Confidencial
