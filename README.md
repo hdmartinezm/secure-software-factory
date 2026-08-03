@@ -23,6 +23,10 @@ This repository demonstrates a **Secure Software Factory** for EFEX, a fintech p
 
 ![EFEX Security Pipeline Flow](docs/images/security-pipeline-flow.png)
 
+### Secure Software Delivery Workflow
+
+![Secure Software Delivery Workflow](docs/images/delivery-workflow-en.png)
+
 ## Pipeline Evidence (Live Runs)
 
 | Scenario | Run ID | Status | Security Gates | Link |
@@ -122,6 +126,10 @@ This approach allows demonstrating the Red scenario without exposing real secret
 
 The security tools used in this factory are **CLI-based and platform-agnostic**. The same scans work on any CI/CD platform:
 
+### Trusted Delivery Platform
+
+![Trusted Delivery Platform](docs/images/trusted-delivery-platform-en.png)
+
 ### Supported Platforms
 
 | Platform | Configuration File | Status |
@@ -147,6 +155,14 @@ All pipelines use the same open-source, industry-standard tools:
 | Container | [Trivy](https://github.com/aquasecurity/trivy) + [Hadolint](https://github.com/hadolint/hadolint) | Image vulnerabilities | SARIF |
 | SBOM | [Syft](https://github.com/anchore/syft) | Software Bill of Materials | SPDX, CycloneDX |
 | Signing | [Cosign](https://github.com/sigstore/cosign) | Artifact signing | Sigstore |
+
+### Security Control Layers
+
+![Security Control Layers](docs/images/security-control-layers-en.png)
+
+### Software Supply Chain - Chain of Trust
+
+![Software Supply Chain Chain of Trust](docs/images/supply-chain-trust-en.png)
 
 ### Universal Security Scanner
 
@@ -1229,6 +1245,10 @@ Este repositorio demuestra una **Fábrica de Software Seguro** para EFEX, una pl
 
 ![Flujo del Pipeline de Seguridad EFEX](docs/images/security-pipeline-flow.png)
 
+### Flujo de Entrega de Software Seguro
+
+![Flujo de Entrega de Software Seguro](docs/images/delivery-workflow-es.png)
+
 ## Evidencia del Pipeline (Ejecuciones en Vivo)
 
 | Escenario | Run ID | Estado | Puertas de Seguridad | Enlace |
@@ -1328,6 +1348,10 @@ Este enfoque permite demostrar el escenario Rojo sin exponer secretos reales ni 
 
 Las herramientas de seguridad utilizadas en esta fábrica son **basadas en CLI y agnósticas de plataforma**. Los mismos escaneos funcionan en cualquier plataforma CI/CD:
 
+### Plataforma de Entrega Confiable
+
+![Plataforma de Entrega Confiable](docs/images/trusted-delivery-platform-es.png)
+
 ### Plataformas Soportadas
 
 | Plataforma | Archivo de Configuración | Estado |
@@ -1353,6 +1377,14 @@ Todos los pipelines usan las mismas herramientas open-source, estándar de la in
 | Contenedor | [Trivy](https://github.com/aquasecurity/trivy) + [Hadolint](https://github.com/hadolint/hadolint) | Vulnerabilidades en imágenes | SARIF |
 | SBOM | [Syft](https://github.com/anchore/syft) | Bill of Materials de Software | SPDX, CycloneDX |
 | Firma | [Cosign](https://github.com/sigstore/cosign) | Firma de artefactos | Sigstore |
+
+### Capas de Control de Seguridad
+
+![Capas de Control de Seguridad](docs/images/security-control-layers-es.png)
+
+### Cadena de Suministro de Software - Cadena de Confianza
+
+![Cadena de Confianza de Suministro de Software](docs/images/supply-chain-trust-es.png)
 
 ### Scanner de Seguridad Universal
 
@@ -1439,6 +1471,10 @@ La salida se escribe en `evidence/scan-results/` en formato SARIF para reportes 
 ## Experiencia del Desarrollador
 
 > **Filosofía**: La seguridad debe habilitar a los desarrolladores, no bloquearlos. Retroalimentación rápida, insights accionables e integración transparente en flujos de trabajo existentes.
+
+### Flujo de Trabajo del Desarrollador
+
+![Flujo de Trabajo del Desarrollador](docs/images/developer-workflow-es.png)
 
 ### Rendimiento del Pipeline
 
@@ -1631,6 +1667,10 @@ metadata:
 ## Métricas de Seguridad y KPIs
 
 > **Lo que se mide, se mejora.** Estas métricas permiten decisiones de seguridad basadas en datos y demuestran ROI a liderazgo.
+
+### Dashboard Ejecutivo
+
+![Dashboard Ejecutivo de Secure Software Factory](docs/images/executive-dashboard-es.png)
 
 ### Métricas Core
 
